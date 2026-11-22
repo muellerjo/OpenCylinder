@@ -46,7 +46,8 @@ The XIAO plays **door 4 "Ward 1 – ward door" (zones 3, 4)** of the fictional
 hospital in [`examples/hospital/`](../examples/hospital/). On every tap:
 
 1. select site application `4F4331`, AES authentication with the site read key
-   (key 1, public dev test key, not diversified yet);
+   (key 1, diversified per card from the public dev test master key with
+   AN10922, M = UID ‖ AID);
 2. encrypted read of file 0 (header) and file 1 (access list);
 3. decision → `OPEN via zone 4 (53 ms)` or `DENY  <reason>`.
 

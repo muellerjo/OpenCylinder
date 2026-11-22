@@ -15,6 +15,13 @@ namespace crypto {
 bool cmacAes128(const uint8_t key[16], const uint8_t iv[16], const uint8_t* msg,
                 size_t len, uint8_t mac[16]);
 
+// NXP AN10922 AES-128 key diversification: per-card key from a master key
+// and diversification input M (1..31 bytes). D = 0x01 || M, padded with
+// 0x80 00.. to 32 bytes; CMAC-style over the 2 blocks, last block XOR K2 if
+// padded, else K1. OpenCylinder uses M = UID (7) || AID (3, wire order).
+bool diversifyAn10922(const uint8_t masterKey[16], const uint8_t* m, size_t mLen,
+                      uint8_t out[16]);
+
 // DESFire CRC32: reflected, polynomial 0xEDB88320, init 0xFFFFFFFF,
 // no final XOR (a.k.a. CRC-32/JAMCRC).
 uint32_t crc32Desfire(const uint8_t* data, size_t len, uint32_t crc = 0xFFFFFFFFu);

@@ -39,8 +39,12 @@ own door ID and the zones it belongs to.
   | 2 | **UID key** | every lock and the encoder | only `GetCardUID` on random-UID cards; **no** file rights | site-wide, not diversified |
 
   A lock never holds the key that can **modify** a genuine card. Keys 0 and 1
-  are **diversified per card** with NXP AN10922 (input: real card UID ‖ AID),
-  so a key extracted from one card does not open the rest of the population.
+  are **diversified per card** with NXP AN10922 (AES-128), so a key
+  extracted from one card does not open the rest of the population.
+  Diversification input, exactly: **M = UID (7 bytes) ‖ AID (3 bytes, LSB
+  first as on the wire)**, no system identifier. Example: UID
+  `04 37 94 DA BB 75 80`, AID `4F4331` → M = `04 37 94 DA BB 75 80 31 43 4F`
+  (same as Proxmark3 `--kdf AN10922 -i 043794DABB758031434F`).
   Key 2 cannot be diversified (it is needed *before* the real UID is known),
   so it is given no rights at all: leaking it reveals card UIDs, nothing more.
   The master keys are generated and held by the site admin and backed up

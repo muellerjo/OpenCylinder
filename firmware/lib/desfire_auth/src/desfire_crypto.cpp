@@ -86,6 +86,34 @@ bool cmacAes128(const uint8_t key[16], const uint8_t iv[16], const uint8_t* msg,
   return ok;
 }
 
+bool diversifyAn10922(const uint8_t masterKey[16], const uint8_t* m, size_t mLen,
+                      uint8_t out[16]) {
+  if (mLen == 0 || mLen > 31) return false;
+  uint8_t zero[16] = {0}, l[16], k1[16], k2[16];
+  if (!aesEcbEncrypt(masterKey, zero, l)) return false;
+  cmacDouble(l, k1);
+  cmacDouble(k1, k2);
+
+  uint8_t d[32] = {0};
+  d[0] = 0x01;
+  memcpy(d + 1, m, mLen);
+  const bool padded = (mLen + 1) < 32;
+  if (padded) d[mLen + 1] = 0x80;
+  const uint8_t* k = padded ? k2 : k1;
+  for (int i = 0; i < 16; ++i) d[16 + i] ^= k[i];
+
+  uint8_t x[16];
+  bool ok = aesEcbEncrypt(masterKey, d, x);           // block 1
+  for (int i = 0; ok && i < 16; ++i) x[i] ^= d[16 + i];
+  ok = ok && aesEcbEncrypt(masterKey, x, out);        // block 2 -> key
+  wipe(l, sizeof l);
+  wipe(k1, sizeof k1);
+  wipe(k2, sizeof k2);
+  wipe(d, sizeof d);
+  wipe(x, sizeof x);
+  return ok;
+}
+
 uint32_t crc32Desfire(const uint8_t* data, size_t len, uint32_t crc) {
   for (size_t i = 0; i < len; ++i) {
     crc ^= data[i];
@@ -116,6 +144,18 @@ bool selfTest() {
   for (const auto& v : vectors) {
     uint8_t mac[16];
     if (!cmacAes128(key, zeroIv, msg, v.len, mac) || !equal16(mac, v.mac)) return false;
+  }
+  // NXP AN10922 §2.2.1 AES-128 example: master key 00112233..EEFF,
+  // M = UID 04782E21801D80 || AID 3042F5 || system id 4E585020416275.
+  {
+    static const uint8_t mk[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                                   0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+    static const uint8_t m[17] = {0x04, 0x78, 0x2E, 0x21, 0x80, 0x1D, 0x80, 0x30, 0x42,
+                                  0xF5, 0x4E, 0x58, 0x50, 0x20, 0x41, 0x62, 0x75};
+    static const uint8_t expect[16] = {0xA8, 0xDD, 0x63, 0xA3, 0xB8, 0x9D, 0x54, 0xB3,
+                                       0x7C, 0xA8, 0x02, 0x47, 0x3F, 0xDA, 0x91, 0x75};
+    uint8_t div[16];
+    if (!diversifyAn10922(mk, m, sizeof m, div) || !equal16(div, expect)) return false;
   }
   // CRC-32/JAMCRC check value: "123456789" -> 0x340BC6D9.
   static const uint8_t check[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};

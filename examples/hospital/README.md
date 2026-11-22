@@ -120,8 +120,11 @@ python3 write_test_card.py               # Sara (2001); asks before formatting t
 python3 write_test_card.py --user 2002   # Max
 ```
 
-Uses the public dev test keys (issuer `0F0E…0100`, read `0011…EEFF`, UID
-`A0A1…AEAF`), **not diversified** per card — a bench simplification.
+Uses the public dev test **master** keys (issuer `0F0E…0100`, read
+`0011…EEFF`, UID `A0A1…AEAF`). Issuer and read key are **diversified per
+card** (NXP AN10922, [`an10922.py`](an10922.py), M = UID ‖ AID); the script
+verifies this with the Proxmark's own `--kdf AN10922`. Needs the Python
+`cryptography` package.
 
 ## Not covered (yet)
 

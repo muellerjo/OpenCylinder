@@ -26,6 +26,10 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   Verified on a DESFire EV1 for all bench cases (Sara open; Max no right;
   Eva blacklisted; Ben time-unknown and expired; Olga not at this time);
   host tests for the decision logic. Debug env `xiao-c3-debug` with NFC library logs.
+- fw + examples: per-card keys — read/issuer keys diversified with NXP
+  AN10922 (M = UID || AID), boot self-test with the AN10922 example vector;
+  `an10922.py` and `write_test_card.py` write diversified keys and verify
+  them against the Proxmark's own `--kdf AN10922`.
 - hw: first RF observation (brownout during AES at bad card angles).
 - docs: README comparison with OSS Standard Offline (incl. key management
   and multi-site cards).

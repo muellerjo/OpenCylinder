@@ -37,10 +37,10 @@ using namespace opencylinder;
 constexpr uint8_t kSiteAid[3] = {0x31, 0x43, 0x4F};
 constexpr uint8_t kReadKeyNo = 1;
 
-// ==== PUBLIC DEV TEST KEY — bench only, never for a real site. ====
-// Real keys never live in source code or in this repository. Not diversified
-// per card yet (bench simplification, see examples/hospital/README.md).
-constexpr uint8_t kDevReadKey[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+// ==== PUBLIC DEV TEST MASTER KEY — bench only, never for a real site. ====
+// Real keys never live in source code or in this repository. The card holds
+// a per-card key diversified from it (AN10922, M = UID || AID).
+constexpr uint8_t kDevReadMasterKey[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
                                      0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
 
 // Door 4 of examples/hospital/site.json, blacklist as in the example.
@@ -154,7 +154,19 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
     Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
     return deny("select application failed");
   }
-  if (!card.authenticateAes(kReadKeyNo, kDevReadKey)) {
+  // Per-card read key: AN10922(master read key, UID || AID). Fixed 7-byte UID
+  // only for now; random-UID cards need the key-2 / GetCardUID flow.
+  if (picc.size != 7) return deny("random/short UID not supported yet");
+  uint8_t divInput[10];
+  memcpy(divInput, picc.uid, 7);
+  memcpy(divInput + 7, kSiteAid, 3);
+  uint8_t cardReadKey[16];
+  if (!crypto::diversifyAn10922(kDevReadMasterKey, divInput, sizeof divInput, cardReadKey)) {
+    return deny("key diversification failed");
+  }
+  const bool authOk = card.authenticateAes(kReadKeyNo, cardReadKey);
+  crypto::wipe(cardReadKey, sizeof cardReadKey);
+  if (!authOk) {
     if (card.lastStatus() == kStatusAuthError) {
       return deny("authentication failed (wrong key or cloned card)");
     }
@@ -223,7 +235,8 @@ void setup() {
                 kDoorId, OC_I2C_SDA, OC_I2C_SCL);
 
   const bool selfTest = crypto::selfTest();
-  Serial.printf("Crypto self-test (AES-CMAC RFC 4493, CRC32): %s\n", selfTest ? "PASS" : "FAIL");
+  Serial.printf("Crypto self-test (AES-CMAC RFC 4493, AN10922, CRC32): %s\n",
+                selfTest ? "PASS" : "FAIL");
   if (!selfTest) {
     Serial.println("ERROR: crypto self-test failed — refusing to operate.");
     return;

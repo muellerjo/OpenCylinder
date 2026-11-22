@@ -16,6 +16,37 @@ credentials. OpenCylinder owns that step: your own admin card, your own
 management/encoder tool, your own site key
 ([`docs/commissioning.md`](docs/commissioning.md)).
 
+## OpenCylinder vs. OSS Standard Offline
+
+[OSS Standard Offline (OSS-SO)](https://www.oss-association.com/oss-standards/standard-offline-by-oss/)
+is the established industry standard for offline, data-on-card access
+control: it defines the card data layout so that locks of different brands
+read and interpret the same card. It solves a different problem than
+OpenCylinder — **interoperability between vendors** rather than **owning
+the whole system** — so neither is better across the board.
+
+| | OSS-SO | OpenCylinder |
+|---|---|---|
+| Specification | members-only (membership 650–5,000 €/year) or on request | public, MIT, in this repo ([`spec/`](spec/card-format.md)) |
+| Lock commissioning / key injection | not part of the published standard — done with each vendor's tools | open and documented ([`docs/commissioning.md`](docs/commissioning.md)); you hold site key, admin key and tooling |
+| Firmware | closed, vendor-specific | open source, auditable, reproducible builds |
+| Recovery if the vendor disappears | depends on the vendor | nothing to depend on — escrowed keys + open tools |
+| Multi-vendor interoperability | **yes — the main purpose** | no — OpenCylinder cards work with OpenCylinder locks only |
+| Certified products | **yes** — certification programme (2026), commercial cylinders with EN-rated mechanics | no — DIY, uncertified |
+| Maturity | deployed industry standard | early development |
+
+**Where OpenCylinder is the better choice:** you want to own every layer —
+read *and* provisioning side — audit the code, and never depend on a vendor
+tool, licence or NDA. That is the gap OSS-SO does not address: it opens how a
+lock *reads* a card, not how a lock is *set up*.
+
+**Where OSS-SO is the better choice:** you need certified hardware, mixed
+brands on one site, or a system an installer can support today.
+
+*OSS-SO facts as published by the OSS Association (checked 2026-11); the
+specification itself is not public, so details beyond the public pages are not
+compared here.*
+
 ## How it works
 
 ```
@@ -62,8 +93,9 @@ swaps transport and crypto backends, not the logic.
 
 ## Roadmap
 
-- **Phase 1 — bring-up:** detect card, ISO-DEP, DESFire AES auth against a real
-  card, cross-checked with a Proxmark3.
+- **Phase 1 — bring-up: ✅ done.** Card detection, native DESFire over ISO-DEP,
+  AES authentication against a real DESFire EV1 — all cross-checked with a
+  Proxmark3.
 - **Phase 2 — decision logic:** access record, door mask, validity, blacklist;
   actuator + fail-safe.
 - **Phase 3 — tools:** card personalisation and lock commissioning.
@@ -76,8 +108,9 @@ Not production-secure until at least:
 
 1. **Keys are not in plain flash** — hardware key storage on the production MCU
    (or ESP32 flash encryption + secure boot during development).
-2. **The AES auth is validated against a reference** — Proxmark3 `hf mfdes` on
-   a real card.
+2. ~~**The AES auth is validated against a reference**~~ — ✅ done: verified on
+   a real DESFire EV1 against Proxmark3 `hf mfdes auth`, including rejection of
+   a wrong key.
 3. **A mechanical override exists** — a dead battery or hung MCU must never
    lock anyone out.
 4. **The mechanics resist force** — the electronics are only as strong as the

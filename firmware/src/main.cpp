@@ -24,10 +24,12 @@
 #include "clock.h"
 #include "desfire_auth.h"
 #include "desfire_crypto.h"
+#include "eventlog.h"
 #include "management.h"
 #include "platform/esp32/esp32_clock.h"
 #include "platform/esp32/gpio_actuator.h"
 #include "platform/esp32/managed_store.h"
+#include "platform/esp32/nvs_event_store.h"
 #include "platform/esp32/rgb_status_led.h"
 #include "platform/esp32/m5_desfire_transport.h"
 #include "version.h"
@@ -112,6 +114,14 @@ m5::nfc::NFCLayerA nfcA{nfcUnit};     // ISO14443-A layer
 Esp32Clock lockClock;
 GpioActuator actuator{OC_ACTUATOR_PIN};
 RgbStatusLed led{OC_LED_R, OC_LED_G, OC_LED_B, OC_LED_ACTIVE_HIGH != 0};
+NvsEventStore eventStore;
+EventLog eventLog{eventStore, 64};
+uint32_t tapCredential = 0;   // credential of the card being evaluated (0 = not read yet)
+
+uint32_t timeOrZero() {
+  uint32_t t = 0;
+  return lockClock.now(t) ? t : 0;
+}
 constexpr uint32_t kOpenWindowMs = 3000;   // clutch engaged after OPEN
 
 bool readerReady = false;
@@ -132,11 +142,72 @@ void printTime(const char* label, uint32_t t) {
                 l.minute, l.dst ? " DST" : "", static_cast<unsigned long>(t));
 }
 
+// ------------------------------------------------------------ event log output
+const char* denyReason(uint8_t code) {
+  switch (code) {
+    case deny_code::kNotDesfire:     return "not a DESFire card";
+    case deny_code::kNoSiteApp:      return "no application for this site";
+    case deny_code::kAuthFailed:     return "authentication failed";
+    case deny_code::kUnreadable:     return "card not readable";
+    case deny_code::kCardError:      return "card error";
+    case deny_code::kUidUnsupported: return "UID not supported";
+    case deny_code::kOther:          return "other";
+    default:
+      return code < 16 ? toString(static_cast<Decision>(code)) : "?";
+  }
+}
+
+void printEvent(const Event& e) {
+  char when[40];
+  if (e.time) {
+    const UtcDateTime d = toUtc(e.time);
+    snprintf(when, sizeof when, "%04u-%02u-%02u %02u:%02u:%02u UTC", d.year, d.month, d.day,
+             d.hour, d.minute, d.second);
+  } else {
+    snprintf(when, sizeof when, "%-23s", "(time unknown)");
+  }
+  Serial.printf("  #%-5lu %s  %-5s ", static_cast<unsigned long>(e.number), when,
+                eventTypeName(e.type));
+  switch (e.type) {
+    case EventType::Open:
+      Serial.printf("credential %lu via %s %u\n", static_cast<unsigned long>(e.credential),
+                    e.code == kEntryDoor ? "door" : "zone", e.target);
+      break;
+    case EventType::Deny:
+      Serial.printf("credential %lu: %s\n", static_cast<unsigned long>(e.credential),
+                    denyReason(e.code));
+      break;
+    case EventType::Admin:
+      Serial.printf("admin_id %u, bundle sequence %lu: %s\n", e.target,
+                    static_cast<unsigned long>(e.credential),
+                    toString(static_cast<BundleStatus>(e.code)));
+      break;
+    case EventType::TimeSet:
+      Serial.printf("set via %s\n", e.code == 2 ? "admin bundle" : "serial");
+      break;
+    case EventType::Boot:
+      Serial.printf("reset reason %u\n", e.code);
+      break;
+    case EventType::Bench:
+      Serial.printf("%s\n", e.code == 1 ? "time reset-hwm" : e.code == 2 ? "mgmt reset" : "log clear");
+      break;
+  }
+}
+
 // ------------------------------------------------------------ serial commands
 void handleCommand(const std::string& line) {
   if (line == "help") {
     Serial.println("commands: time | time <unix-utc-seconds> | time reset-hwm |"
-                   " mgmt | mgmt reset | uidmode [auto|key2] | help");
+                   " mgmt | mgmt reset | log | log clear | uidmode [auto|key2] | help");
+  } else if (line == "log") {
+    const std::vector<Event> ev = eventLog.entries();
+    Serial.printf("log   %lu events total, showing the last %u\n",
+                  static_cast<unsigned long>(eventLog.total()), static_cast<unsigned>(ev.size()));
+    for (const Event& e : ev) printEvent(e);
+  } else if (line == "log clear") {
+    eventLog.clear();
+    eventLog.add(EventType::Bench, 3, timeOrZero());
+    Serial.println("log   cleared (bench only)");
   } else if (line == "mgmt") {
     Serial.printf("mgmt  bundle sequence %lu, TZ %s\n",
                   static_cast<unsigned long>(managed.lastSequence), managed.tzRule.c_str());
@@ -150,6 +221,7 @@ void handleCommand(const std::string& line) {
     }
   } else if (line == "mgmt reset") {
     managedStore.clear();
+    eventLog.add(EventType::Bench, 2, timeOrZero());
     setDefaults(managed);
     parsePosixTz(managed.tzRule.c_str(), siteTz);
     Serial.println("mgmt  reset to factory defaults (bench only)");
@@ -165,6 +237,7 @@ void handleCommand(const std::string& line) {
     if (lockClock.highWater()) printTime("      high-water mark ", lockClock.highWater());
   } else if (line == "time reset-hwm") {
     lockClock.resetHighWater();
+    eventLog.add(EventType::Bench, 1, 0);
     Serial.println("time  high-water mark and time cleared (bench only) - time is UNKNOWN");
   } else if (line.rfind("time ", 0) == 0) {
     char* end = nullptr;
@@ -178,6 +251,7 @@ void handleCommand(const std::string& line) {
       return;
     }
     printTime("time  set to ", static_cast<uint32_t>(v));
+    eventLog.add(EventType::TimeSet, 1, static_cast<uint32_t>(v), static_cast<uint32_t>(v));
   } else if (!line.empty()) {
     Serial.printf("unknown command '%s' (try: help)\n", line.c_str());
   }
@@ -186,8 +260,13 @@ void handleCommand(const std::string& line) {
 // Minimal line editor: the serial monitor sends every key raw and does not
 // echo, so echo printable characters and handle Backspace / Delete here.
 void pollSerial() {
+  static uint8_t escState = 0;  // 0 = normal, 1 = after ESC, 2 = inside ESC [ ... sequence
   while (Serial.available()) {
     const char c = static_cast<char>(Serial.read());
+    // Swallow ANSI escape sequences (arrow keys etc.): ESC [ <params> <final byte>
+    if (escState == 1) { escState = (c == '[') ? 2 : 0; continue; }
+    if (escState == 2) { if (c >= 0x40 && c <= 0x7E) escState = 0; continue; }
+    if (c == 0x1B) { escState = 1; continue; }
     if (c == '\r' || c == '\n') {
       if (c == '\n' && serialLine.empty()) continue;  // CR LF: ignore the LF
       Serial.println();
@@ -218,7 +297,8 @@ constexpr uint8_t kNoResponse = 0xFF;
 
 const char* retryReason = "";
 
-Outcome deny(const char* reason) {
+Outcome deny(const char* reason, uint8_t code = deny_code::kOther) {
+  eventLog.add(EventType::Deny, code, timeOrZero(), tapCredential);
   Serial.printf("DENY  %s\n", reason);
   led.show(LedPattern::Deny, 1000);
   return Outcome::Final;
@@ -233,7 +313,7 @@ Outcome retry(const char* reason) {
 Outcome cardFailure(DesfireAuth& card, const char* what) {
   if (card.lastStatus() == kNoResponse) return retry(what);
   Serial.printf("      [%s: %s, card status %02X]\n", what, card.lastError(), card.lastStatus());
-  return deny(what);
+  return deny(what, deny_code::kCardError);
 }
 
 // Read `len` bytes of an encrypted file in chunks (DESFire read <= 256 B).
@@ -255,7 +335,7 @@ bool readChunked(DesfireAuth& card, uint8_t fileNo, uint32_t offset, uint32_t le
 // bundle; admin cards never open the door.
 Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
   Serial.println("ADMIN admin application found");
-  if (picc.size != 7) return deny("admin card: random/short UID not supported yet");
+  if (picc.size != 7) return deny("admin card: random/short UID not supported yet", deny_code::kUidUnsupported);
   uint8_t divInput[10];
   memcpy(divInput, picc.uid, 7);
   memcpy(divInput + 7, kAdminAid, 3);
@@ -267,7 +347,7 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
   crypto::wipe(key, sizeof key);
   if (!authOk) {
     if (card.lastStatus() == kNoResponse) return retry(card.lastError());
-    return deny("admin card: authentication failed");
+    return deny("admin card: authentication failed", deny_code::kAuthFailed);
   }
 
   std::vector<uint8_t> hdr, bundle, rest;
@@ -297,11 +377,16 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
 
   // Time sync whenever the signature was valid (also for a stale sequence).
   if (st == BundleStatus::Applied || st == BundleStatus::StaleSequence) {
-    if (lockClock.trySet(sum.issuedAt)) printTime("ADMIN time set to ", sum.issuedAt);
+    if (lockClock.trySet(sum.issuedAt)) {
+      printTime("ADMIN time set to ", sum.issuedAt);
+      eventLog.add(EventType::TimeSet, 2, sum.issuedAt, sum.issuedAt);
+    }
     else printTime("ADMIN time NOT set (rollback) - high-water mark ", lockClock.highWater());
   }
   if (st != BundleStatus::Applied) {
     Serial.printf("ADMIN bundle not applied: %s\n", toString(st));
+    eventLog.add(EventType::Admin, static_cast<uint8_t>(st), timeOrZero(), bh.sequence,
+                 static_cast<uint16_t>(adminId));
     led.show(st == BundleStatus::StaleSequence ? LedPattern::Admin : LedPattern::Deny, 1500);
     return Outcome::Final;
   }
@@ -312,13 +397,16 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
                 static_cast<unsigned>(managed.blacklist.size()),
                 sum.profilesReplaced ? "replaced" : "unchanged",
                 sum.tzReplaced ? managed.tzRule.c_str() : "unchanged");
+  eventLog.add(EventType::Admin, static_cast<uint8_t>(st), timeOrZero(), bh.sequence,
+               static_cast<uint16_t>(adminId));
   led.show(LedPattern::Admin, 1500);
   return Outcome::Final;
 }
 
 Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   const uint32_t t0 = millis();
-  if (!picc.isMifareDESFire()) return deny("not a DESFire card");
+  tapCredential = 0;
+  if (!picc.isMifareDESFire()) return deny("not a DESFire card", deny_code::kNotDesfire);
 
   // Fresh activation incl. RATS -> ISO-DEP session sized from the card's ATS.
   if (!nfcA.reactivate(picc)) return retry("ISO-DEP activation failed");
@@ -332,7 +420,7 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   if (card.lastStatus() == kNoResponse) return retry(card.lastError());
 
   if (!card.selectApplication(kSiteAid)) {
-    if (card.lastStatus() == kStatusNoSuchApp) return deny("no application for this site (4F4331)");
+    if (card.lastStatus() == kStatusNoSuchApp) return deny("no application for this site (4F4331)", deny_code::kNoSiteApp);
     if (card.lastStatus() == kNoResponse) return retry(card.lastError());
     Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
     return deny("select application failed");
@@ -348,7 +436,7 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   } else if (randomId || (picc.size == 7 && forceUidKeyPath)) {
     if (!card.authenticateAes(kUidKeyNo, kDevUidKey)) {
       if (card.lastStatus() == kNoResponse) return retry(card.lastError());
-      return deny("UID key authentication failed");
+      return deny("UID key authentication failed", deny_code::kAuthFailed);
     }
     if (!card.getCardUid(realUid)) {
       if (card.lastStatus() == kNoResponse) return retry(card.lastError());
@@ -362,7 +450,7 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
                                                                     : "  (MISMATCH!)")
                                  : "  (random ID card)");
   } else {
-    return deny("unsupported UID length");
+    return deny("unsupported UID length", deny_code::kUidUnsupported);
   }
   uint8_t divInput[10];
   memcpy(divInput, realUid, 7);
@@ -375,11 +463,11 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   crypto::wipe(cardReadKey, sizeof cardReadKey);
   if (!authOk) {
     if (card.lastStatus() == kStatusAuthError) {
-      return deny("authentication failed (wrong key or cloned card)");
+      return deny("authentication failed (wrong key or cloned card)", deny_code::kAuthFailed);
     }
     if (card.lastStatus() == kNoResponse) return retry(card.lastError());
     Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
-    return deny("authentication failed");
+    return deny("authentication failed", deny_code::kAuthFailed);
   }
 
   std::vector<uint8_t> file0;
@@ -388,6 +476,7 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   }
   CardHeader h;
   parseHeader(file0.data(), file0.size(), h);
+  tapCredential = h.credentialId;
   Serial.printf("REC   credential %lu, format %u, %u entries\n",
                 static_cast<unsigned long>(h.credentialId), h.formatVersion, h.entryCount);
   if (h.validUntil) printTime("      valid until ", h.validUntil);
@@ -399,7 +488,7 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   std::vector<uint32_t> blacklistNow;
   const LockConfig lock = currentLock(blacklistNow, timeKnown, now);
   const Decision pre = checkHeader(h, lock, timeKnown, now);
-  if (pre != Decision::Open) return deny(toString(pre));
+  if (pre != Decision::Open) return deny(toString(pre), static_cast<uint8_t>(pre));
 
   std::vector<uint8_t> file1;
   std::vector<AccessEntry> entries;
@@ -421,11 +510,13 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
                     r.matched.targetId, static_cast<unsigned long>(ms));
     }
     actuator.engage(kOpenWindowMs);
+    eventLog.add(EventType::Open, r.matched.type, timeOrZero(), h.credentialId, r.matched.targetId);
     led.show(LedPattern::Open, kOpenWindowMs);
     Serial.printf("      clutch engaged for %lu ms (pin %d)\n",
                   static_cast<unsigned long>(kOpenWindowMs), OC_ACTUATOR_PIN);
   } else {
     Serial.printf("DENY  %s  (%lu ms)\n", toString(r.decision), static_cast<unsigned long>(ms));
+    eventLog.add(EventType::Deny, static_cast<uint8_t>(r.decision), timeOrZero(), h.credentialId);
     led.show(LedPattern::Deny, 1000);
   }
   return Outcome::Final;
@@ -443,7 +534,7 @@ void handleTap(m5::nfc::a::PICC& picc) {
     nfcA.deactivate();
     delay(kRetryDelayMs);
   }
-  deny("card not readable - hold it flat on the reader");
+  deny("card not readable - hold it flat on the reader", deny_code::kUnreadable);
   led.show(LedPattern::Unreadable, 1500);
 }
 
@@ -480,7 +571,9 @@ void setup() {
   }
   const uint64_t mac = ESP.getEfuseMac();
   memset(deviceId, 0, sizeof deviceId);
-  for (int i = 0; i < 6; ++i) deviceId[2 + i] = static_cast<uint8_t>(mac >> (8 * (5 - i)));
+  // getEfuseMac() holds the MAC little-endian (first MAC byte in the lowest
+  // byte); the device ID shows it in the usual order (matches esptool / USB).
+  for (int i = 0; i < 6; ++i) deviceId[2 + i] = static_cast<uint8_t>(mac >> (8 * i));
   Serial.printf("Device ID %02X%02X%02X%02X%02X%02X%02X%02X\n", deviceId[0], deviceId[1],
                 deviceId[2], deviceId[3], deviceId[4], deviceId[5], deviceId[6], deviceId[7]);
   if (!parsePosixTz(managed.tzRule.c_str(), siteTz)) {
@@ -496,6 +589,12 @@ void setup() {
     led.show(LedPattern::Error);
     return;
   }
+  eventStore.begin();
+  eventLog.begin();
+  eventLog.add(EventType::Boot, static_cast<uint8_t>(esp_reset_reason()), 0);
+  Serial.printf("Event log: %lu events so far (keeps the last %u)\n",
+                static_cast<unsigned long>(eventLog.total()),
+                static_cast<unsigned>(eventLog.capacity()));
   Serial.println("Time UNKNOWN until set (type: help). Hold a card to the antenna.\n");
 }
 

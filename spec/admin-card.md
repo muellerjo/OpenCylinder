@@ -3,7 +3,8 @@
 **Status: draft. Implemented: maintenance bundles (time, blacklist, profiles,
 TZ, sequence, ECDSA P-256 signature) — firmware `lib/management`, encoder
 `examples/hospital/bundle.py` / `write_admin_card.py`, verified on the bench.
-Not yet: commissioning (§5), decommissioning, card log.** Design decisions
+Local event log (§6, v1) implemented in `lib/eventlog`. Not yet:
+commissioning (§5), decommissioning, log read-out via card.** Design decisions
 taken 2026-11-23 (marked **Decision**).
 Context: [`docs/commissioning.md`](../docs/commissioning.md),
 [`docs/lifecycle-and-security.md`](../docs/lifecycle-and-security.md).

@@ -18,6 +18,19 @@ yellow → SDA, white → SCL.
 pio run -e xiao-c3 -t upload -t monitor
 ```
 
+**Stable serial port (Linux):** the ESP32-C3's native USB re-enumerates on
+every reset and often comes back as a *new* `/dev/ttyACMx`, so the monitor
+cannot reconnect. Put the board's stable name into a git-ignored
+`platformio_local.ini` (picked up via `extra_configs`):
+
+```ini
+[env]
+upload_port  = /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_<MAC>-if00
+monitor_port = /dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_<MAC>-if00
+```
+
+(`ls /dev/serial/by-id/` shows the exact name.)
+
 The ESP32-C3 boards are for development only. The battery-powered device moves
 to nRF52 or STM32L5/U5; hardware-specific code stays behind interfaces so the
 port swaps the transport and crypto backends, not the logic.
@@ -34,8 +47,10 @@ port swaps the transport and crypto backends, not the logic.
   M5Unit-NFC ISO-DEP layer, native DESFire frames), `Esp32Clock`.
 - `src/main.cpp` — Phase 2 bench lock.
 - `include/version.h`, `scripts/version.py` — build version stamping.
-- `test/host/` — host tests (plain g++, no hardware) — decision logic,
-  time profiles, time zone vs. Python `zoneinfo`, rollback rule:
+- `test/host/` — host tests (plain g++, no hardware): `test_access_decision`
+  (decision logic, time profiles, time zone vs. Python `zoneinfo`, rollback
+  rule), `test_management` (bundles), `test_eventlog` (ring buffer) — each
+  file's header has its g++ command, e.g.:
   ```
   cd test/host && g++ -std=c++11 -Wall -Wextra -I../../lib/access_decision/src \
     test_access_decision.cpp ../../lib/access_decision/src/*.cpp -o t && ./t
@@ -64,6 +79,13 @@ never opens. Signature check ≈ 350 ms on the ESP32-C3 (software ECC; the
 nRF52 CryptoCell does it in hardware). Write one with
 [`examples/hospital/write_admin_card.py`](../examples/hospital/write_admin_card.py).
 
+**Event log:** every boot, opening, refusal (with reason code), admin tap
+and time change is recorded locally — 16-byte records in a ring buffer
+(64 entries in NVS on the dev board; `lib/eventlog`). It contains
+credential IDs, i.e. who opened which door when: access and retention follow
+the site's privacy rules. Read-out via admin card comes later
+([`spec/admin-card.md`](../spec/admin-card.md) §6).
+
 **Time profiles** of the example (day shift, cleaning shift, office hours)
 and the site time zone `CET-1CEST,M3.5.0,M10.5.0/3` are the factory defaults
 (replaced by admin bundles)
@@ -91,6 +113,7 @@ hold the card flat, short blue flash every 2 s = time unknown, fast red blink
 | `time` | UTC + local time, high-water mark |
 | `time <unix-utc-seconds>` | set the time (rollback rule applies) |
 | `time reset-hwm` | forget the high-water mark and the time (bench only) |
+| `log` / `log clear` | local event log (last 64 events: boot, open, deny + reason, admin, time set) / clear it (bench only) |
 | `mgmt` / `mgmt reset` | show the managed configuration (bundle sequence, blacklist, profiles, TZ) / back to factory defaults (bench only) |
 | `uidmode key2` / `uidmode auto` | force the random-UID path (key 2 + `GetCardUID`) on fixed-UID cards / back to normal |
 | `help` | |

@@ -232,3 +232,6 @@ fp-info-cache
 
 # Firmware libraries (overrides the Python "lib/" rule above)
 !firmware/lib/
+
+# PlatformIO machine-local settings
+platformio_local*.ini

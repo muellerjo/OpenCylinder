@@ -38,6 +38,14 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw: device ID now in MAC byte order (matches esptool / USB serial);
+  serial input ignores ANSI escape sequences (arrow keys); optional,
+  git-ignored `platformio_local.ini` for a stable `/dev/serial/by-id/` port
+  so the monitor reconnects after a reset.
+- fw: local event log — 16-byte records (time, event number, type, reason
+  code, door/zone or admin ID, credential or sequence) in a 64-entry NVS ring
+  buffer; boot, open, deny (with reason), admin, time set, bench actions;
+  serial `log` / `log clear`; `lib/eventlog` with host tests.
 - fw + examples: maintenance admin card — signed management bundles
   (ECDSA P-256 over SHA-256, mbedTLS) with time sync, blacklist add/remove/
   replace (with expiry), time profiles and TZ, anti-replay sequence; state in

@@ -32,7 +32,7 @@ bool decodeEvent(const uint8_t in[kEventSize], Event& e) {
   e.target = static_cast<uint16_t>(in[10] | (in[11] << 8));
   e.credential = get32(in + 12);
   return in[8] >= static_cast<uint8_t>(EventType::Boot) &&
-         in[8] <= static_cast<uint8_t>(EventType::Identify);
+         in[8] <= static_cast<uint8_t>(EventType::Commission);
 }
 
 void EventLog::add(EventType type, uint8_t code, uint32_t time, uint32_t credential,
@@ -71,6 +71,7 @@ const char* eventTypeName(EventType t) {
     case EventType::TimeSet: return "TIME";
     case EventType::Bench:   return "BENCH";
     case EventType::Identify: return "IDENT";
+    case EventType::Commission: return "COMM";
   }
   return "?";
 }

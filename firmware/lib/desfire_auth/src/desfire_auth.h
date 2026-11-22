@@ -66,6 +66,10 @@ class DesfireAuth {
   bool readDataEncrypted(uint8_t fileNo, uint32_t offset, uint32_t length,
                          std::vector<uint8_t>& out);
 
+  // ReadData (0xBD) of a file with FREE read access, communication mode
+  // plain, without authentication (commissioning card, spec §5.3).
+  bool readDataPlain(uint8_t fileNo, uint32_t offset, uint32_t length, std::vector<uint8_t>& out);
+
   // WriteData (0x3D) to a file with FREE write access, communication mode
   // plain, without authentication (identify card, spec/admin-card.md §5.5).
   // Long data is sent in DESFire-level frames (0xAF chaining).

@@ -161,6 +161,18 @@ python3 write_identify_card.py --read               # after tapping a lock
 python3 write_identify_card.py --read --qr "OC1:…"  # compare with the engraved QR
 ```
 
+## Commissioning card
+
+Commission a **FACTORY** lock for one door: the bundle is encrypted to that
+lock's public key (from its QR text — banner, engraving or identify card) and
+signed; it also carries the site's profiles, TZ and blacklist.
+
+```
+python3 write_commissioning_card.py --qr "OC1:<device ID>:<public key>" --door 4
+```
+
+The lock is recorded in the git-ignored site database `locks.local.json`.
+
 ## Not covered (yet)
 
 - Time profiles here are written informally (`days`, `from`, `to`); the

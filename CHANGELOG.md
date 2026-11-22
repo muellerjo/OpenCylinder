@@ -38,6 +38,14 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw + examples: commissioning — FACTORY lock decrypts the ECIES record
+  (ECDH P-256, HKDF-SHA256 per RFC 5869 with boot self-test, AES-128-GCM)
+  with its device private key, verifies the bundle with the received site
+  key, stores the site configuration (NVS) and applies the bundle's
+  maintenance records → OWNED; built-in site constants replaced by the
+  stored site configuration (dev site only as bench fallback);
+  `write_commissioning_card.py` (commissioning application 4F434B, free
+  read; site database locks.local.json, git-ignored).
 - fw + examples: identify card — the lock writes its public identity into a
   free-access file (any state; never opens); chunked plain WriteData;
   `write_identify_card.py` sets up, reads and cross-checks against an

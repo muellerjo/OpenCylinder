@@ -26,11 +26,13 @@
 #include "desfire_auth.h"
 #include "desfire_crypto.h"
 #include "eventlog.h"
+#include "commissioning.h"
 #include "management.h"
 #include "platform/esp32/esp32_clock.h"
 #include "platform/esp32/gpio_actuator.h"
 #include "platform/esp32/device_identity.h"
 #include "platform/esp32/managed_store.h"
+#include "platform/esp32/site_store.h"
 #include "platform/esp32/nvs_event_store.h"
 #include "platform/esp32/rgb_status_led.h"
 #include "platform/esp32/m5_desfire_transport.h"
@@ -42,7 +44,7 @@ using namespace opencylinder;
 
 // ---------------------------------------------------------------- bench lock
 // Site AID 4F4331 (test site), LSB-first as sent on the wire.
-constexpr uint8_t kSiteAid[3] = {0x31, 0x43, 0x4F};
+constexpr uint8_t kDevSiteAid[3] = {0x31, 0x43, 0x4F};
 constexpr uint8_t kReadKeyNo = 1;
 
 // ==== PUBLIC DEV TEST MASTER KEY — bench only, never for a real site. ====
@@ -63,7 +65,7 @@ bool forceUidKeyPath = false;
 
 // Admin application of the test site (spec/admin-card.md) and its read key
 // master (public dev test key, diversified per card: UID || admin AID).
-constexpr uint8_t kAdminAid[3] = {0x41, 0x43, 0x4F};  // 4F4341, wire order
+constexpr uint8_t kDevAdminAid[3] = {0x41, 0x43, 0x4F};  // 4F4341, wire order
 constexpr uint8_t kAdminReadKeyNo = 1;
 constexpr uint8_t kDevAdminReadMasterKey[16] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
                                                 0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90};
@@ -78,8 +80,8 @@ constexpr uint8_t kDevManagementPublicKey[65] = {
     0xBA, 0xAA, 0xC5, 0x79, 0xC1};
 
 // Door 4 of examples/hospital/site.json.
-constexpr uint16_t kDoorId = 4;
-constexpr uint16_t kLockZones[] = {3, 4};
+constexpr uint16_t kDevDoorId = 4;
+constexpr uint16_t kDevLockZones[] = {3, 4};
 // Factory defaults of the managed configuration (until the first admin
 // bundle): blacklist, time profiles and time zone as in the example.
 const TimeProfile kDefaultProfiles[] = {
@@ -88,6 +90,25 @@ const TimeProfile kDefaultProfiles[] = {
     {3, kMon | kTue | kWed | kThu | kFri, {{7 * 60, 18 * 60}, {0, 0}}},        // Office hours
 };
 const char* const kDefaultTz = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Berlin
+
+// Site configuration — received at commissioning (spec/admin-card.md §5.3),
+// persisted in NVS. Valid only in state OWNED.
+SiteConfig site;
+SiteStore siteStore;
+bool siteFromCommissioning = false;  // false = built-in dev site (bench)
+
+// Bench: the built-in dev test site (= what the examples' commissioning card
+// carries). Removed once commissioning is the only way in.
+void loadDevSite(SiteConfig& c) {
+  memcpy(c.siteAid, kDevSiteAid, 3);
+  memcpy(c.adminAid, kDevAdminAid, 3);
+  memcpy(c.readMasterKey, kDevReadMasterKey, 16);
+  memcpy(c.uidKey, kDevUidKey, 16);
+  memcpy(c.adminReadMasterKey, kDevAdminReadMasterKey, 16);
+  memcpy(c.managementPublicKey, kDevManagementPublicKey, 65);
+  c.doorId = kDevDoorId;
+  c.zones.assign(kDevLockZones, kDevLockZones + sizeof kDevLockZones / sizeof kDevLockZones[0]);
+}
 
 ManagedState managed;     // blacklist, profiles, TZ, last bundle sequence (NVS)
 ManagedStore managedStore;
@@ -104,7 +125,7 @@ void setDefaults(ManagedState& m) {
 // The lock's effective configuration for one decision.
 LockConfig currentLock(std::vector<uint32_t>& blacklistStorage, bool timeKnown, uint32_t now) {
   blacklistStorage = activeBlacklist(managed, timeKnown, now);
-  return LockConfig{kDoorId, kLockZones, sizeof kLockZones / sizeof kLockZones[0],
+  return LockConfig{site.doorId, site.zones.data(), site.zones.size(),
                     blacklistStorage.data(), blacklistStorage.size(),
                     managed.profiles.data(), managed.profiles.size(), &siteTz};
 }
@@ -203,6 +224,11 @@ void printEvent(const Event& e) {
     case EventType::Boot:
       Serial.printf("reset reason %u\n", e.code);
       break;
+    case EventType::Commission:
+      Serial.printf("door %u, bundle sequence %lu: %s\n", e.target,
+                    static_cast<unsigned long>(e.credential),
+                    toString(static_cast<CommissionStatus>(e.code)));
+      break;
     case EventType::Identify:
       Serial.printf("identity written (state %s)\n", e.code ? "OWNED" : "FACTORY");
       break;
@@ -231,6 +257,9 @@ void handleCommand(const std::string& line) {
     setDefaults(managed);
     parsePosixTz(managed.tzRule.c_str(), siteTz);
     const bool owned = (line == "state owned");
+    siteStore.clear();
+    if (owned) loadDevSite(site);  // built-in dev site, not stored
+    siteFromCommissioning = false;
     setLockState(owned ? LockState::Owned : LockState::Factory);
     eventLog.add(EventType::Bench, owned ? 5 : 4, timeOrZero());
     Serial.printf("state %s (bench; site data reset, device key pair kept)\n", lockStateName());
@@ -382,9 +411,9 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
   if (picc.size != 7) return deny("admin card: random/short UID not supported yet", deny_code::kUidUnsupported);
   uint8_t divInput[10];
   memcpy(divInput, picc.uid, 7);
-  memcpy(divInput + 7, kAdminAid, 3);
+  memcpy(divInput + 7, site.adminAid, 3);
   uint8_t key[16];
-  if (!crypto::diversifyAn10922(kDevAdminReadMasterKey, divInput, sizeof divInput, key)) {
+  if (!crypto::diversifyAn10922(site.adminReadMasterKey, divInput, sizeof divInput, key)) {
     return deny("admin key diversification failed");
   }
   const bool authOk = card.authenticateAes(kAdminReadKeyNo, key);
@@ -412,8 +441,8 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
   const bool timeKnown = lockClock.now(now);
   ApplySummary sum;
   const uint32_t tv0 = millis();
-  const BundleStatus st = applyBundle(bundle.data(), bundle.size(), kSiteAid, deviceId,
-                                      kDevManagementPublicKey, verifyBundleSignature, timeKnown,
+  const BundleStatus st = applyBundle(bundle.data(), bundle.size(), site.siteAid, deviceId,
+                                      site.managementPublicKey, verifyBundleSignature, timeKnown,
                                       now, managed, sum);
   Serial.printf("ADMIN admin_id %lu, bundle sequence %lu, %u bytes, signature check %lu ms\n",
                 static_cast<unsigned long>(adminId), static_cast<unsigned long>(bh.sequence),
@@ -468,9 +497,9 @@ Outcome handleIdentifyCard(DesfireAuth& card) {
   memcpy(rec + 10, identity.publicKey(), 33);
   parseVersion(FW_VERSION, rec + 43);
   if (lockState == LockState::Owned) {
-    memcpy(rec + 46, kSiteAid, 3);
-    rec[49] = static_cast<uint8_t>(kDoorId);
-    rec[50] = static_cast<uint8_t>(kDoorId >> 8);
+    memcpy(rec + 46, site.siteAid, 3);
+    rec[49] = static_cast<uint8_t>(site.doorId);
+    rec[50] = static_cast<uint8_t>(site.doorId >> 8);
   }
   if (!card.writeDataPlain(0, 0, rec, sizeof rec)) return cardFailure(card, "identify write");
   char qr[100];
@@ -479,6 +508,91 @@ Outcome handleIdentifyCard(DesfireAuth& card) {
                 lockStateName(), qr);
   eventLog.add(EventType::Identify, static_cast<uint8_t>(lockState), timeOrZero());
   led.show(LedPattern::Admin, 1500);
+  return Outcome::Final;
+}
+
+// ------------------------------------------------------------ commissioning
+// Commissioning card (spec/admin-card.md §5.3): own application, one file
+// with FREE read access holding the commissioning bundle — a blank lock has
+// no keys; the content protects itself (ECIES to this lock + signature).
+constexpr uint8_t kCommissioningAid[3] = {0x4B, 0x43, 0x4F};  // 4F434B, wire order
+
+void printSite() {
+  Serial.printf("Site %02X%02X%02X, admin app %02X%02X%02X, door %u, zones",
+                site.siteAid[2], site.siteAid[1], site.siteAid[0], site.adminAid[2],
+                site.adminAid[1], site.adminAid[0], site.doorId);
+  for (uint16_t z : site.zones) Serial.printf(" %u", z);
+  Serial.println(siteFromCommissioning ? "  (commissioned)" : "  (built-in dev site)");
+}
+
+bool deviceEcdh(const uint8_t peer[65], uint8_t shared[32]) { return identity.ecdh(peer, shared); }
+
+bool readPlainChunked(DesfireAuth& card, uint8_t fileNo, uint32_t offset, uint32_t len,
+                      std::vector<uint8_t>& out) {
+  out.clear();
+  while (len) {
+    const uint32_t n = len > DesfireAuth::kMaxReadLength ? DesfireAuth::kMaxReadLength : len;
+    std::vector<uint8_t> part;
+    if (!card.readDataPlain(fileNo, offset, n, part)) return false;
+    out.insert(out.end(), part.begin(), part.end());
+    offset += n;
+    len -= n;
+  }
+  return true;
+}
+
+Outcome handleCommissioningCard(DesfireAuth& card) {
+  Serial.println("COMM  commissioning card found");
+  std::vector<uint8_t> bundle, rest;
+  if (!readPlainChunked(card, 0, 0, kBundleHeaderSize, bundle)) {
+    return cardFailure(card, "commissioning bundle header read");
+  }
+  BundleHeader bh;
+  parseBundleHeader(bundle.data(), bundle.size(), bh);
+  const uint32_t total = kBundleHeaderSize + bh.payloadLen + kBundleSignatureSize;
+  if (total > kMaxBundleSize) return deny("commissioning bundle too large");
+  if (!readPlainChunked(card, 0, kBundleHeaderSize, total - kBundleHeaderSize, rest)) {
+    return cardFailure(card, "commissioning bundle read");
+  }
+  bundle.insert(bundle.end(), rest.begin(), rest.end());
+
+  const uint32_t t0 = millis();
+  SiteConfig cfg;
+  const CommissionStatus cs =
+      openCommissioningBundle(bundle.data(), bundle.size(), deviceId, deviceEcdh, cfg);
+  Serial.printf("COMM  bundle sequence %lu, %u bytes, decrypt + verify %lu ms: %s\n",
+                static_cast<unsigned long>(bh.sequence), static_cast<unsigned>(bundle.size()),
+                static_cast<unsigned long>(millis() - t0), toString(cs));
+  if (cs != CommissionStatus::Ok) {
+    eventLog.add(EventType::Commission, static_cast<uint8_t>(cs), timeOrZero(), bh.sequence);
+    led.show(LedPattern::Deny, 1500);
+    return Outcome::Final;
+  }
+
+  // Commit: site configuration, fresh managed state, then the bundle's other
+  // records (TZ, profiles, blacklist, sequence) through the normal path.
+  site = cfg;
+  siteStore.save(site);
+  siteFromCommissioning = true;
+  managed = ManagedState{};
+  managed.tzRule = "UTC0";
+  uint32_t now = 0;
+  const bool timeKnown = lockClock.now(now);
+  ApplySummary sum;
+  const BundleStatus st = applyBundle(bundle.data(), bundle.size(), site.siteAid, deviceId,
+                                      site.managementPublicKey, verifyBundleSignature, timeKnown,
+                                      now, managed, sum);
+  if (st == BundleStatus::Applied || st == BundleStatus::StaleSequence) {
+    if (lockClock.trySet(bh.issuedAt)) printTime("COMM  time set to ", bh.issuedAt);
+  }
+  parsePosixTz(managed.tzRule.c_str(), siteTz);
+  managedStore.save(managed);
+  setLockState(LockState::Owned);
+  eventLog.add(EventType::Commission, static_cast<uint8_t>(cs), timeOrZero(), bh.sequence,
+               site.doorId);
+  Serial.printf("COMM  commissioned -> OWNED (maintenance records: %s)\n      ", toString(st));
+  printSite();
+  led.show(LedPattern::Admin, 2000);
   return Outcome::Final;
 }
 
@@ -498,16 +612,27 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   if (card.selectApplication(kIdentifyAid)) return handleIdentifyCard(card);
   if (card.lastStatus() == kNoResponse) return retry(card.lastError());
 
+  // Commissioning card? Only a FACTORY lock accepts one.
+  if (card.selectApplication(kCommissioningAid)) {
+    if (lockState == LockState::Owned) {
+      Serial.println("COMM  lock already commissioned - commissioning card ignored");
+      led.show(LedPattern::Deny, 1000);
+      return Outcome::Final;
+    }
+    return handleCommissioningCard(card);
+  }
+  if (card.lastStatus() == kNoResponse) return retry(card.lastError());
+
   if (lockState == LockState::Factory) {
-    // FACTORY opens nothing; commissioning and identify cards come next.
+    // FACTORY opens nothing.
     return deny("lock not commissioned (FACTORY)", deny_code::kNotCommissioned);
   }
 
   // Admin application present? Then this is an admin card (never opens).
-  if (card.selectApplication(kAdminAid)) return handleAdminCard(picc, card);
+  if (card.selectApplication(site.adminAid)) return handleAdminCard(picc, card);
   if (card.lastStatus() == kNoResponse) return retry(card.lastError());
 
-  if (!card.selectApplication(kSiteAid)) {
+  if (!card.selectApplication(site.siteAid)) {
     if (card.lastStatus() == kStatusNoSuchApp) return deny("no application for this site (4F4331)", deny_code::kNoSiteApp);
     if (card.lastStatus() == kNoResponse) return retry(card.lastError());
     Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
@@ -522,7 +647,7 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   if (picc.size == 7 && !forceUidKeyPath) {
     memcpy(realUid, picc.uid, 7);
   } else if (randomId || (picc.size == 7 && forceUidKeyPath)) {
-    if (!card.authenticateAes(kUidKeyNo, kDevUidKey)) {
+    if (!card.authenticateAes(kUidKeyNo, site.uidKey)) {
       if (card.lastStatus() == kNoResponse) return retry(card.lastError());
       return deny("UID key authentication failed", deny_code::kAuthFailed);
     }
@@ -542,9 +667,9 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   }
   uint8_t divInput[10];
   memcpy(divInput, realUid, 7);
-  memcpy(divInput + 7, kSiteAid, 3);
+  memcpy(divInput + 7, site.siteAid, 3);
   uint8_t cardReadKey[16];
-  if (!crypto::diversifyAn10922(kDevReadMasterKey, divInput, sizeof divInput, cardReadKey)) {
+  if (!crypto::diversifyAn10922(site.readMasterKey, divInput, sizeof divInput, cardReadKey)) {
     return deny("key diversification failed");
   }
   const bool authOk = card.authenticateAes(kReadKeyNo, cardReadKey);
@@ -640,11 +765,10 @@ void setup() {
 
   Serial.printf("OpenCylinder fw %s+%s.%s (%s) card-format<=%u\n", FW_VERSION, OC_BOARD_NAME,
                 OC_VARIANT_NAME, FW_GIT, kCardFormatVersion);
-  Serial.printf("Phase 2 bench: door %u (zones 3, 4), site 4F4331, I2C SDA=%d SCL=%d\n",
-                kDoorId, OC_I2C_SDA, OC_I2C_SCL);
+  Serial.printf("Bench lock, I2C SDA=%d SCL=%d\n", OC_I2C_SDA, OC_I2C_SCL);
 
-  const bool selfTest = crypto::selfTest();
-  Serial.printf("Crypto self-test (AES-CMAC RFC 4493, AN10922, CRC32): %s\n",
+  const bool selfTest = crypto::selfTest() && commissioningSelfTest();
+  Serial.printf("Crypto self-test (AES-CMAC RFC 4493, AN10922, CRC32, HKDF RFC 5869): %s\n",
                 selfTest ? "PASS" : "FAIL");
   if (!selfTest) {
     Serial.println("ERROR: crypto self-test failed — refusing to operate.");
@@ -686,7 +810,17 @@ void setup() {
 #else
   lockState = static_cast<LockState>(statePrefs.getUChar("state", static_cast<uint8_t>(LockState::Factory)));
 #endif
+  siteStore.begin();
+  siteFromCommissioning = (lockState == LockState::Owned) && siteStore.load(site);
+  if (lockState == LockState::Owned && !siteFromCommissioning) {
+#if defined(OC_DEV_BUILTIN_SITE)
+    loadDevSite(site);  // bench: OWNED by the built-in dev test site
+#else
+    lockState = LockState::Factory;  // no site configuration -> blank
+#endif
+  }
   Serial.printf("Lock state: %s\n", lockStateName());
+  if (lockState == LockState::Owned) printSite();
   if (!parsePosixTz(managed.tzRule.c_str(), siteTz)) {
     Serial.println("ERROR: invalid site time zone rule");
     led.show(LedPattern::Error);

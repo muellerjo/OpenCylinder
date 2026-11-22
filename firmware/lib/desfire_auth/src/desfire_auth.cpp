@@ -145,6 +145,30 @@ bool DesfireAuth::readDataEncrypted(uint8_t fileNo, uint32_t offset,
   return exchangeEncrypted(CMD_READ_DATA, hdr, sizeof hdr, length, out);
 }
 
+bool DesfireAuth::readDataPlain(uint8_t fileNo, uint32_t offset, uint32_t length,
+                                std::vector<uint8_t>& out) {
+  out.clear();
+  if (authenticated_) return fail("plain read: only without a session");
+  if (length == 0 || length > kMaxReadLength || offset > 0xFFFFFF) {
+    return fail("plain read: bad length/offset");
+  }
+  uint8_t hdr[7];
+  hdr[0] = fileNo;
+  putLe24(hdr + 1, offset);
+  putLe24(hdr + 4, length);
+  DesfireResponse r;
+  bool ok = t_.transceive(CMD_READ_DATA, hdr, sizeof hdr, r);
+  while (ok && r.status == CMD_ADDITIONAL_FRAME) {
+    out.insert(out.end(), r.data.begin(), r.data.end());
+    ok = t_.transceive(CMD_ADDITIONAL_FRAME, nullptr, 0, r);
+  }
+  if (!ok) return fail("plain read: no response");
+  if (r.status != STATUS_OK) return fail("plain read: card status", r.status);
+  out.insert(out.end(), r.data.begin(), r.data.end());
+  if (out.size() != length) return fail("plain read: wrong length", r.status);
+  return true;
+}
+
 bool DesfireAuth::writeDataPlain(uint8_t fileNo, uint32_t offset, const uint8_t* data,
                                  uint32_t length) {
   if (authenticated_) return fail("plain write: only without a session");

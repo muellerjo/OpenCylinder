@@ -20,6 +20,7 @@ enum class EventType : uint8_t {
   Admin = 4,     // code = BundleStatus, credential = bundle sequence, target = admin_id
   TimeSet = 5,   // code = source (1 serial, 2 admin bundle), credential = new time
   Identify = 7,  // identity written to an identify card (code = lock state)
+  Commission = 8,  // commissioning card (code = CommissionStatus, target = door, credential = sequence)
   Bench = 6,     // bench-only actions (code: 1 time reset-hwm, 2 mgmt reset, 3 log clear,
                 //   4 state -> FACTORY, 5 state -> OWNED (dev site))
 };

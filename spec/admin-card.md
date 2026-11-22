@@ -3,8 +3,9 @@
 **Status: draft. Implemented: maintenance bundles (time, blacklist, profiles,
 TZ, sequence, ECDSA P-256 signature) — firmware `lib/management`, encoder
 `examples/hospital/bundle.py` / `write_admin_card.py`, verified on the bench.
-Local event log (§6, v1) implemented in `lib/eventlog`. Not yet:
-commissioning (§5), decommissioning, log read-out via card.** Design decisions
+Local event log (§6, v1), device key pair, lock states, identify card and
+commissioning (§5.1–5.3, §5.5) implemented. Not yet: reassignment,
+decommissioning (§5.4), log read-out via card.** Design decisions
 taken 2026-11-23 (marked **Decision**).
 Context: [`docs/commissioning.md`](../docs/commissioning.md),
 [`docs/lifecycle-and-security.md`](../docs/lifecycle-and-security.md).
@@ -171,11 +172,16 @@ OC1:0000AC276EFB0250:03A1B2…   (≈ 88 characters, QR version 4, ~ 15–20 mm 
 1. gets the lock's device ID + public key (QR, site database §5.6, or
    identify card §5.5);
 2. builds a **commissioning bundle**: `target_device` = that device ID,
-   records `0x30` (commissioning block) and `0x31` (lock assignment: door ID,
-   zones);
+   record `0x30` (commissioning block, incl. door ID and zones) plus the
+   site's maintenance records (time profiles, TZ, blacklist) so the lock is
+   complete after one tap;
 3. encrypts the commissioning block **to the lock's public key** (ECIES,
    below) and **signs** the bundle with the site management key;
-4. writes it onto an admin card; the admin taps it on the lock.
+4. writes it onto a **commissioning card**: a DESFire card with the
+   **commissioning application** (AID `4F434B`), one file with **free read**
+   access (a blank lock has no keys to authenticate with — the content
+   protects itself: secrets encrypted to the lock, everything signed). The
+   card reveals only the target device ID and timestamps.
 
 The lock (only in FACTORY):
 
@@ -192,7 +198,7 @@ target lock. An OWNED lock ignores commissioning bundles.
 
 | Field | Bytes | |
 |---|---:|---|
-| ephemeral public key | 33 | P-256, compressed, fresh per commissioning |
+| ephemeral public key | 65 | P-256, **uncompressed** (mbedTLS 2.28 on the ESP32 cannot read compressed points), fresh per commissioning |
 | nonce | 12 | random |
 | ciphertext | n | AES-128-GCM of the plaintext below |
 | tag | 16 | GCM authentication tag |
@@ -210,11 +216,15 @@ Plaintext:
 | site read master key | 16 |
 | UID key | 16 |
 | admin read master key | 16 |
-| site management public key (compressed) | 33 |
+| site management public key (uncompressed) | 65 |
+| door ID | 2 |
+| zone count | 1 |
+| zone IDs | 2 each, ≤ 16 |
 
 **Record `0x31` — lock assignment:** door ID (u16), zone count (u8),
-zone IDs (u16 each, ≤ 16). Only valid in a bundle with `target_device` = this
-lock.
+zone IDs (u16 each, ≤ 16). For **reassignment** of an OWNED lock (§5.4); only
+valid in a bundle with `target_device` = this lock. (At commissioning, door
+and zones travel encrypted inside `0x30`.)
 
 ### 5.4 Reassignment and decommissioning (OWNED)
 

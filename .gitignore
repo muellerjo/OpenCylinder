@@ -235,3 +235,6 @@ fp-info-cache
 
 # PlatformIO machine-local settings
 platformio_local*.ini
+
+# Encoder site database (per installation)
+examples/hospital/locks.local.json

@@ -88,6 +88,13 @@ pseudo-random. States: **FACTORY** (opens nothing) and **OWNED**. Until
 commissioning is implemented, the bench lock starts OWNED by the built-in dev
 test site (`OC_DEV_BUILTIN_SITE`).
 
+**Commissioning card:** a FACTORY lock accepts a commissioning card
+(application `4F434B`, free-read file): it decrypts record `0x30` with its
+device private key (ECIES: ECDH P-256, HKDF-SHA256, AES-128-GCM), verifies
+the signature with the site key it just received, stores the site
+configuration and becomes OWNED; an OWNED lock ignores commissioning cards.
+Write one with [`examples/hospital/write_commissioning_card.py`](../examples/hospital/write_commissioning_card.py).
+
 **Identify card:** a card with the identify application (`4F4349`) is
 checked first, in every state: the lock writes its public identity (state,
 device ID, public key, firmware version, site AID, door) into the card's

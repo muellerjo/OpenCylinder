@@ -6,6 +6,7 @@
 
 #include <Preferences.h>
 #include <esp_random.h>
+#include <mbedtls/ecdh.h>
 #include <mbedtls/ecp.h>
 
 #include <cstdio>
@@ -38,6 +39,32 @@ class DeviceIdentity {
     const bool ok = derivePublic(priv);
     mbedtls_platform_zeroize_compat(priv, sizeof priv);
     return ok;
+  }
+
+  // ECDH with the device private key: peer = uncompressed P-256 point,
+  // shared = x-coordinate. The private key is loaded only for this call.
+  bool ecdh(const uint8_t peer[65], uint8_t shared[32]) {
+    uint8_t priv[32];
+    if (prefs_.getBytes("priv", priv, sizeof priv) != sizeof priv) return false;
+    mbedtls_ecp_group grp;
+    mbedtls_mpi d, z;
+    mbedtls_ecp_point q;
+    mbedtls_ecp_group_init(&grp);
+    mbedtls_mpi_init(&d);
+    mbedtls_mpi_init(&z);
+    mbedtls_ecp_point_init(&q);
+    int rc = mbedtls_ecp_group_load(&grp, MBEDTLS_ECP_DP_SECP256R1);
+    if (rc == 0) rc = mbedtls_mpi_read_binary(&d, priv, 32);
+    if (rc == 0) rc = mbedtls_ecp_point_read_binary(&grp, &q, peer, 65);
+    if (rc == 0) rc = mbedtls_ecp_check_pubkey(&grp, &q);
+    if (rc == 0) rc = mbedtls_ecdh_compute_shared(&grp, &z, &q, &d, espRng, nullptr);
+    if (rc == 0) rc = mbedtls_mpi_write_binary(&z, shared, 32);
+    mbedtls_ecp_point_free(&q);
+    mbedtls_mpi_free(&z);
+    mbedtls_mpi_free(&d);
+    mbedtls_ecp_group_free(&grp);
+    mbedtls_platform_zeroize_compat(priv, sizeof priv);
+    return rc == 0;
   }
 
   const uint8_t* deviceId() const { return deviceId_; }

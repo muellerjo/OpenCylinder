@@ -84,6 +84,7 @@ details beyond the public pages are not compared here.*
 | `hardware/` | electronics and mechanics | [`hardware/VERSION`](hardware/VERSION) |
 | `spec/`     | card format — the contract between firmware and tools | `format_version` in the spec |
 | `docs/`     | commissioning, lifecycle & security, versioning | — |
+| `examples/` | worked examples, e.g. a [fictional hospital](examples/hospital/) to play with the card format | — |
 
 Components are versioned independently — see
 [`docs/versioning.md`](docs/versioning.md) and [`CHANGELOG.md`](CHANGELOG.md).

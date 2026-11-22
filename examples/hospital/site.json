@@ -1,0 +1,95 @@
+{
+  "_comment": "Fictional example site for OpenCylinder card format v1. All names are invented. Uses the reserved test-site AID and is NOT a real configuration.",
+  "site": {
+    "name": "St. Example Hospital (fictional)",
+    "aid": "4F4331",
+    "timezone": "Europe/Berlin",
+    "issued_at": "2026-11-23T08:00:00Z"
+  },
+
+  "zones": [
+    { "id": 1,  "name": "Entrances" },
+    { "id": 2,  "name": "Emergency department" },
+    { "id": 3,  "name": "All wards" },
+    { "id": 4,  "name": "Ward 1" },
+    { "id": 5,  "name": "Ward 2" },
+    { "id": 6,  "name": "Intensive care unit" },
+    { "id": 7,  "name": "Staff areas" },
+    { "id": 8,  "name": "Technical rooms" },
+    { "id": 9,  "name": "Pharmacy" },
+    { "id": 10, "name": "Medication rooms" }
+  ],
+
+  "doors": [
+    { "id": 1,  "name": "Main entrance",                 "zones": [1] },
+    { "id": 2,  "name": "Emergency room entrance",       "zones": [2] },
+    { "id": 3,  "name": "Canteen",                       "zones": [7] },
+    { "id": 4,  "name": "Ward 1 - ward door",            "zones": [3, 4] },
+    { "id": 5,  "name": "Ward 1 - medication room",      "zones": [4, 10] },
+    { "id": 6,  "name": "Ward 2 - ward door",            "zones": [3, 5] },
+    { "id": 7,  "name": "Ward 2 - medication room",      "zones": [5, 10] },
+    { "id": 8,  "name": "ICU entrance",                  "zones": [6] },
+    { "id": 9,  "name": "Pharmacy",                      "zones": [9] },
+    { "id": 10, "name": "Boiler room",                   "zones": [8] },
+    { "id": 11, "name": "Server room",                   "zones": [] },
+    { "id": 12, "name": "Changing rooms",                "zones": [7] },
+    { "id": 13, "name": "Chief physician's office",      "zones": [] }
+  ],
+
+  "time_profiles": [
+    { "id": 1, "name": "Day shift",      "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"], "from": "06:00", "to": "20:00" },
+    { "id": 2, "name": "Cleaning shift", "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],        "from": "05:00", "to": "11:00" },
+    { "id": 3, "name": "Office hours",   "days": ["Mon", "Tue", "Wed", "Thu", "Fri"],               "from": "07:00", "to": "18:00" }
+  ],
+
+  "roles": {
+    "doctor": {
+      "label": "Doctor (Arzt/Ärztin)",
+      "entries": [ { "zone": 1 }, { "zone": 2 }, { "zone": 3 }, { "zone": 6 }, { "zone": 7 }, { "zone": 10 } ]
+    },
+    "nurse-ward-1": {
+      "label": "Nurse, ward 1 (Pflegekraft Station 1)",
+      "entries": [ { "zone": 1 }, { "zone": 4 }, { "zone": 7 } ]
+    },
+    "nurse-ward-2": {
+      "label": "Nurse, ward 2 (Pflegekraft Station 2)",
+      "entries": [ { "zone": 1 }, { "zone": 5 }, { "zone": 7 } ]
+    },
+    "caretaker": {
+      "label": "Caretaker (Hausmeister/in)",
+      "entries": [ { "zone": 1 }, { "zone": 3, "profile": 1 }, { "zone": 7 }, { "zone": 8 } ]
+    },
+    "cleaner": {
+      "label": "Cleaner (Reinigungskraft)",
+      "entries": [ { "zone": 1, "profile": 2 }, { "zone": 3, "profile": 2 }, { "zone": 7, "profile": 2 } ]
+    },
+    "pharmacist": {
+      "label": "Pharmacist (Apotheker/in)",
+      "entries": [ { "zone": 1 }, { "zone": 7 }, { "zone": 9 }, { "zone": 10, "profile": 1 } ]
+    },
+    "it": {
+      "label": "IT administrator",
+      "entries": [ { "zone": 1, "profile": 3 }, { "zone": 7 }, { "door": 11 } ]
+    },
+    "paramedic": {
+      "label": "Paramedic, external EMS (Rettungsdienst)",
+      "entries": [ { "door": 2 } ]
+    }
+  },
+
+  "users": [
+    { "credential_id": 1001, "name": "Dr. Lena Koch",  "roles": ["doctor"], "extra": [ { "door": 13 } ], "note": "chief physician: own office as individual door entry" },
+    { "credential_id": 1002, "name": "Dr. Tim Berger", "roles": ["doctor"] },
+    { "credential_id": 2001, "name": "Sara Yilmaz",    "roles": ["nurse-ward-1"] },
+    { "credential_id": 2002, "name": "Max Huber",      "roles": ["nurse-ward-2"] },
+    { "credential_id": 2003, "name": "Eva Brandt",     "roles": ["nurse-ward-1"], "note": "card reported lost -> blacklisted" },
+    { "credential_id": 3001, "name": "Peter Lang",     "roles": ["caretaker"] },
+    { "credential_id": 4001, "name": "Olga Novak",     "roles": ["cleaner"], "valid_until": "2027-03-31T22:00:00Z", "note": "temporary contract" },
+    { "credential_id": 4002, "name": "Ben Fischer",    "roles": ["cleaner"], "valid_until": "2026-10-31T23:00:00Z", "note": "contract ended -> card expired" },
+    { "credential_id": 5001, "name": "Mia Schulz",     "roles": ["pharmacist"] },
+    { "credential_id": 6001, "name": "Ali Demir",      "roles": ["it"] },
+    { "credential_id": 7001, "name": "EMS crew North", "roles": ["paramedic"], "valid_until": "2027-12-31T23:00:00Z", "note": "external organisation; their own EMS site app can sit on the same card" }
+  ],
+
+  "blacklist": [2003]
+}

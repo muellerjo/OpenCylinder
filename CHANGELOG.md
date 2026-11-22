@@ -28,6 +28,9 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   one application per site with a freely chosen AID (first nibble not `F`,
   per NXP AN10787), multi-site cards (EV2/EV3 DAM recommended); test site
   AID `4F4331`.
+- examples: fictional hospital (doors, zones, time profiles, roles, users)
+  with `check_access.py`, which encodes cards per format v1 and runs the
+  lock decision logic.
 - tools: Elatec TWN4 encoder driver and card inspection script.
 - docs: commissioning, lifecycle & security (incl. reset policy), versioning.
 - hw: clutch / actuator concept and prior-art pool.

@@ -8,20 +8,30 @@ This document defines the trust model, the lifecycle processes, and what
 
 Two separate keys, never mixed:
 
-- **Site key** (AES-128) — authenticates *user* cards. Held by the admin, in a
-  secure element on each lock and in the encoder. Ideally diversified per card
-  (per-card key = f(site key, card UID)) so one cracked card ≠ all cards.
+- **Site read key** (AES-128) — authenticates and reads *user* cards. Held in
+  the secure element of each lock and in the encoder. Diversified per card
+  (NXP AN10922, input card UID ‖ AID) so one cracked card ≠ all cards.
+- **Issuer key** (AES-128) — the only key that can write or change user cards.
+  Held by the encoder only, **never by a lock**, so a lock compromised in the
+  field cannot be used to rewrite genuine cards. Also diversified per card.
+- **UID key** (AES-128, site-wide) — only lets locks and encoder read the real
+  UID of a random-UID card (`GetCardUID`); no file rights.
+- **Card master key** — owned by the cardholder or issuing organisation,
+  diversified per card from one master secret; never left at the factory
+  default on real cards (`spec/card-format.md`).
 - **Admin key** (AES-128) — authorises *management* actions on a lock
   (commission, blacklist, time, decommission). Distinct from the site key, so a
   normal user card can never perform admin operations.
 
 Keys live in: the lock's **secure element** (ST secure storage / ATECC608A),
 the admin's **encoder**, and (derived) on cards. **Never in plain flash.**
-Both keys are backed up off-site (institutional escrow) — losing them is the
+All keys are backed up off-site (institutional escrow) — losing them is the
 only unrecoverable failure.
 
 Card types:
-- **User card** — your DESFire app: `{credential_id, valid_until, door_mask}`.
+- **User card** — your DESFire app: header `{format_version, credential_id,
+  valid_until, issued_at}` plus an access list of door and zone entries
+  (`spec/card-format.md`).
 - **Admin card** — privileged, carries blacklist deltas, current time, and
   commissioning data. The single most sensitive object in the system: guard it
   like the master key it effectively is.
@@ -29,15 +39,16 @@ Card types:
 ## 2. Lifecycle processes
 
 ### 2.1 Card personalisation (at the encoder, never at the lock)
-Factory-blank DESFire → auth card-master-key → create app → set app key (site
-key, diversified) → write `{credential_id, valid_until, door_mask}`. Verify with
-Proxmark. You own the format, so you own this step — no NDA, no vendor.
+Factory-blank DESFire → auth card-master-key (and replace it with a
+site-owned one) → create app → set issuer key + site read key (diversified) →
+write header and access list. Verify with Proxmark. You own the format, so you own this step — no NDA, no vendor.
 
 ### 2.2 Lock commissioning (initialising a new lock)
 A fresh cylinder ships **blank** (factory/transport state, opens nothing).
 Commissioning, done by tapping the **admin card** to the new lock:
 1. installs the **site key** (so it can authenticate user cards),
-2. assigns its **door-id / door bit** (which door this is),
+2. assigns its **door ID** (16-bit, unique per site) and the **zones** it
+   belongs to (e.g. "Ward 3", "Maintenance"),
 3. sets the **admin key** (from now on only your admin card can manage it),
 4. sets the initial **time** (RTC).
 
@@ -53,11 +64,13 @@ of an owned lock needs the admin key or a protected physical reset (§2.6).
 ```
 card tap -> LPCD wakes MCU -> field on -> select app
          -> AES mutual auth        (proves card holds site key; no UID cloning)
-         -> read {credential_id, valid_until, door_mask}
+         -> read header {format_version, credential_id, valid_until, issued_at}
+         -> format_version known ?          else reject
          -> valid_until == 0, or (time known and valid_until >= RTC) ?
                                             else reject   (see §2.5)
-         -> door_mask has THIS door bit ?   else reject
          -> credential_id NOT in blacklist? else reject
+         -> read access list: an entry for THIS door ID or one of THIS lock's
+            zones, whose time profile allows now ?   else reject
          -> engage clutch; user turns knob; log event locally; sleep
 ```
 No network, no central anything. The decision is made in the lock.

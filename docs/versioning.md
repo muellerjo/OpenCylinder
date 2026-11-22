@@ -43,7 +43,7 @@ Firmware declares the versions it supports (`kCardFormatVersion` in
 closed. The encoder tool writes exactly one format version per release.
 
 The same rule will apply to the configuration a lock stores during
-commissioning (site key, admin key, door-id, …): it gets its own layout version
+commissioning (site read key, admin key, door ID, zones, …): it gets its own layout version
 when that storage is implemented.
 
 ## Releasing a component

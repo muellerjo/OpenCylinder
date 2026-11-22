@@ -34,12 +34,14 @@ If you ever buy pre-made secure elements, the transport key is what you change
 on first use — treat it like a default password.
 
 ## Commission a new cylinder (blank -> owned)
-1. In your tool, define the door: assign a unique **door-id**.
+1. In your tool, define the door: assign a unique **door ID** and the
+   **zones** it belongs to.
 2. Tap the **admin card** (or connect the encoder) to the blank cylinder.
 3. The tool, over that channel, writes into the cylinder's secure element:
-   - your **site key** (so it can authenticate your user cards),
+   - your **site read key** (so it can authenticate your user cards —
+     never the issuer key, which stays in the encoder),
    - your **admin key** (so only you can manage it henceforth),
-   - the **door-id**,
+   - the **door ID** and its **zone memberships**,
    - the current **time** (RTC).
 4. The transport key is overwritten; the lock is now OWNED.
 5. Verify: tap an authorised user card -> it opens. Cross-check with your
@@ -47,13 +49,14 @@ on first use — treat it like a default password.
 
 ## Fit a new lock into an existing card population
 Because this is data-on-card (your own format, [`spec/card-format.md`](../spec/card-format.md)):
-- Add the new **door-id** to the door_mask of the user cards that should open it.
-- **Update those cards** at the encoder (or an admin-card-carried update), so
-  the new door-id is in their rights. Until updated, a card won't open the new
-  lock.
-- Shortcut: if you issued cards with a door_mask that already includes a range of
-  future door-ids, the new lock works immediately — no card update — at the cost
-  of a lost card opening more. Your call per door.
+- **Usual case — zones:** commission the new lock into the zones it belongs
+  to (e.g. "Ward 3"). Every card that carries a zone entry for "Ward 3" opens
+  it immediately — **no card update needed**.
+- **Individual access:** for people who should open only this door, add a
+  **door entry** with the new door ID to their access list at the encoder (or
+  via an admin-card-carried update). Until updated, their card won't open it.
+- Trade-off: broad zones mean fewer card updates, but a lost card opens more.
+  Short `valid_until` and the blacklist limit that risk.
 
 ## Decommission / re-key
 - **Soft (admin card):** authenticate admin key -> wipe config -> back to

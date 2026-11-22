@@ -41,7 +41,7 @@ class DesfireAuth {
   explicit DesfireAuth(IDesfireTransport& transport) : t_(transport) {}
 
   // Select an application by its 3-byte AID, given LSB-first (wire order),
-  // e.g. AID 0xF51001 -> {0x01, 0x10, 0xF5}.
+  // e.g. AID 0x4F4331 -> {0x31, 0x43, 0x4F}.
   bool selectApplication(const uint8_t aid[3]);
 
   // Authenticate with AES `key` (16 bytes) as key number `keyNo`.

@@ -28,7 +28,9 @@ the whole system** — so neither is better across the board.
 | | OSS-SO | OpenCylinder |
 |---|---|---|
 | Specification | members-only (membership 650–5,000 €/year) or on request | public, MIT, in this repo ([`spec/`](spec/card-format.md)) |
-| Lock commissioning / key injection | not part of the published standard — done with each vendor's tools | open and documented ([`docs/commissioning.md`](docs/commissioning.md)); you hold site key, admin key and tooling |
+| Key management | separate OSS key-management standard: operator-generated keys (per BSI-TL 03424), loaded via a key transport card; spec members-only | public; every step — key generation, card personalisation, lock commissioning — runs with open tools ([`docs/commissioning.md`](docs/commissioning.md)) |
+| Lock commissioning / card tooling | vendor software | open tools in this repo; no membership, licence or vendor software |
+| Multiple independent sites on one card | card data can be split into "sites" (details not public) | one DESFire application **per site** with its **own keys** — home, hospital, EMS station, workshop on one card, cryptographically separated; any admin can set up a site ([`spec/card-format.md`](spec/card-format.md#multiple-sites-on-one-card)) |
 | Firmware | closed, vendor-specific | open source, auditable, reproducible builds |
 | Recovery if the vendor disappears | depends on the vendor | nothing to depend on — escrowed keys + open tools |
 | Multi-vendor interoperability | **yes — the main purpose** | no — OpenCylinder cards work with OpenCylinder locks only |
@@ -37,15 +39,20 @@ the whole system** — so neither is better across the board.
 
 **Where OpenCylinder is the better choice:** you want to own every layer —
 read *and* provisioning side — audit the code, and never depend on a vendor
-tool, licence or NDA. That is the gap OSS-SO does not address: it opens how a
-lock *reads* a card, not how a lock is *set up*.
+tool, licence or NDA. OSS-SO opens how a lock *reads* a card and is working
+towards operator-held keys, but its specifications and tooling stay with
+members and vendors. With OpenCylinder, every operator — a household, a
+hospital, a volunteer EMS station — can run their **own** site with their
+**own** keys, side by side on the same card, without asking anyone.
 
 **Where OSS-SO is the better choice:** you need certified hardware, mixed
 brands on one site, or a system an installer can support today.
 
-*OSS-SO facts as published by the OSS Association (checked 2026-11); the
-specification itself is not public, so details beyond the public pages are not
-compared here.*
+*OSS-SO facts as published by the OSS Association on its
+[OSS-SO](https://www.oss-association.com/oss-standards/standard-offline-by-oss/) and
+[key management](https://www.oss-association.com/oss-standards/standard-key-management-by-oss/)
+pages (checked 2026-11); the specifications themselves are not public, so
+details beyond the public pages are not compared here.*
 
 ## How it works
 

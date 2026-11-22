@@ -18,8 +18,16 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
 - fw: phase 1 bring-up on XIAO ESP32C3 + ST25R3916 (M5Unit-NFC 0.1.2):
   card detection, `M5DesfireTransport` (native DESFire over ISO-DEP),
   `GetVersion`, AES auth on application `F51001`.
-- docs: README comparison with OSS Standard Offline.
-- spec: card format version 1, including the `format_version` byte.
+- docs: README comparison with OSS Standard Offline (incl. key management
+  and multi-site cards).
+- spec: card format version 1 — 16-byte header (`format_version` first,
+  `credential_id`, `valid_until`, `issued_at`) plus an access list of door and
+  zone entries with time-profile references (scales to 65 535 doors / zones);
+  separate issuer key and site read key (diversified per card) plus a UID
+  key for random-UID cards; per-card diversified card master key;
+  one application per site with a freely chosen AID (first nibble not `F`,
+  per NXP AN10787), multi-site cards (EV2/EV3 DAM recommended); test site
+  AID `4F4331`.
 - tools: Elatec TWN4 encoder driver and card inspection script.
 - docs: commissioning, lifecycle & security (incl. reset policy), versioning.
 - hw: clutch / actuator concept and prior-art pool.

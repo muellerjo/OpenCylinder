@@ -23,8 +23,9 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   messaging, CMAC-chained IV, CRC32), card format v1 decision
   (`access_decision` lib), `IClock` + serial `time` command, retry on
   communication failures; boot self-test of AES-CMAC (RFC 4493) and CRC32.
-  Verified on a DESFire EV1 for Sara/Ben/Olga cases; host tests for the
-  decision logic. Debug env `xiao-c3-debug` with NFC library logs.
+  Verified on a DESFire EV1 for all bench cases (Sara open; Max no right;
+  Eva blacklisted; Ben time-unknown and expired; Olga not at this time);
+  host tests for the decision logic. Debug env `xiao-c3-debug` with NFC library logs.
 - hw: first RF observation (brownout during AES at bad card angles).
 - docs: README comparison with OSS Standard Offline (incl. key management
   and multi-site cards).

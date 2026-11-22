@@ -110,6 +110,19 @@ permanent rights still work — the fail-safe rule from
 The Phase 2 bench lock plays **door 4 (Ward 1 – ward door, zones 3 and 4)**.
 A dev card written with Sara's record opens it; Max's (ward 2) does not.
 
+Write a user onto a **DESFire dev card** (factory-default card master key)
+with a Proxmark3 — application `4F4331` with 3 AES keys, both files, the
+user's record, then read-back and key-separation checks:
+
+```
+python3 write_test_card.py --dry-run     # show the Proxmark commands only
+python3 write_test_card.py               # Sara (2001); asks before formatting the card
+python3 write_test_card.py --user 2002   # Max
+```
+
+Uses the public dev test keys (issuer `0F0E…0100`, read `0011…EEFF`, UID
+`A0A1…AEAF`), **not diversified** per card — a bench simplification.
+
 ## Not covered (yet)
 
 - Time-profile definitions are informal here; their on-lock format and how

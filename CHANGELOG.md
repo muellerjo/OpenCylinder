@@ -30,7 +30,9 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   AID `4F4331`.
 - examples: fictional hospital (doors, zones, time profiles, roles, users)
   with `check_access.py`, which encodes cards per format v1 and runs the
-  lock decision logic.
+  lock decision logic; `write_test_card.py` sets up a DESFire dev card via
+  Proxmark3 (app `4F4331`, 3 keys, files, record) and checks read-back and
+  key separation — verified on a DESFire EV1.
 - tools: Elatec TWN4 encoder driver and card inspection script.
 - docs: commissioning, lifecycle & security (incl. reset policy), versioning.
 - hw: clutch / actuator concept and prior-art pool.

@@ -20,13 +20,39 @@ bool contains(const uint32_t* list, size_t n, uint32_t v) {
   return false;
 }
 
-// Time profiles are not implemented yet (definitions come with admin cards):
-// only profile 0 ("always") can allow access. Fails closed otherwise.
-bool profileAllows(uint8_t profile, bool /*timeKnown*/, uint32_t /*now*/) {
-  return profile == 0;
+bool inInterval(const TimeInterval& iv, uint16_t minute, bool sameDay) {
+  if (iv.from == iv.to) return false;                  // unused
+  if (iv.from < iv.to) return sameDay && minute >= iv.from && minute < iv.to;
+  // wraps past midnight: [from, 1440) on the start day, [0, to) on the next
+  return sameDay ? minute >= iv.from : minute < iv.to;
+}
+
+// Profile 0 = always. Any other profile needs a known time and a definition;
+// unknown profile or unknown time -> fail closed.
+bool profileAllows(uint8_t id, bool timeKnown, uint32_t now, const LockConfig& lock) {
+  if (id == 0) return true;
+  if (!timeKnown || !lock.profiles) return false;
+  for (size_t i = 0; i < lock.profileCount; ++i) {
+    if (lock.profiles[i].id != id) continue;
+    static const TzRule kUtc;
+    return profileActive(lock.profiles[i], toLocal(now, lock.tz ? *lock.tz : kUtc));
+  }
+  return false;
 }
 
 }  // namespace
+
+bool profileActive(const TimeProfile& p, const LocalTime& lt) {
+  const uint8_t today = static_cast<uint8_t>(1u << lt.weekday);
+  const uint8_t yesterday = static_cast<uint8_t>(1u << ((lt.weekday + 6) % 7));
+  for (const TimeInterval& iv : p.iv) {
+    if ((p.days & today) && inInterval(iv, lt.minuteOfDay, true)) return true;
+    if ((p.days & yesterday) && iv.from > iv.to && inInterval(iv, lt.minuteOfDay, false)) {
+      return true;
+    }
+  }
+  return false;
+}
 
 bool parseHeader(const uint8_t* d, size_t len, CardHeader& h) {
   if (len < kHeaderSize) return false;
@@ -80,7 +106,7 @@ Result decide(const CardHeader& h, const std::vector<AccessEntry>& entries,
         (e.type == kEntryDoor && e.targetId == lock.doorId) ||
         (e.type == kEntryZone && contains(lock.zones, lock.zoneCount, e.targetId));
     if (!target) continue;
-    if (profileAllows(e.timeProfile, timeKnown, now)) {
+    if (profileAllows(e.timeProfile, timeKnown, now, lock)) {
       r.decision = Decision::Open;
       r.matched = e;
       return r;

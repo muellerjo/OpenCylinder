@@ -25,6 +25,7 @@
 #include "desfire_auth.h"
 #include "desfire_crypto.h"
 #include "platform/esp32/esp32_clock.h"
+#include "platform/esp32/gpio_actuator.h"
 #include "platform/esp32/m5_desfire_transport.h"
 #include "version.h"
 
@@ -42,19 +43,41 @@ constexpr uint8_t kReadKeyNo = 1;
 // a per-card key diversified from it (AN10922, M = UID || AID).
 constexpr uint8_t kDevReadMasterKey[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
                                      0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
+// Site-wide UID key (key 2): only lets the lock fetch the real UID of a
+// random-UID card. Public dev test key.
+constexpr uint8_t kUidKeyNo = 2;
+constexpr uint8_t kDevUidKey[16] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+                                    0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF};
+
+// Dev switch (serial `uidmode`): force the random-UID path (key 2 +
+// GetCardUID) also for fixed-UID cards, to test it without irreversibly
+// enabling random UID on a card.
+bool forceUidKeyPath = false;
 
 // Door 4 of examples/hospital/site.json, blacklist as in the example.
 constexpr uint16_t kDoorId = 4;
 constexpr uint16_t kLockZones[] = {3, 4};
 constexpr uint32_t kBlacklist[] = {2003};
+// Time profiles of examples/hospital/site.json and the site time zone
+// (spec/time-profiles.md). Production: delivered by admin card.
+const TimeProfile kProfiles[] = {
+    {1, 0x7F, {{6 * 60, 20 * 60}, {0, 0}}},                          // Day shift, daily
+    {2, kMon | kTue | kWed | kThu | kFri | kSat, {{5 * 60, 11 * 60}, {0, 0}}},  // Cleaning
+    {3, kMon | kTue | kWed | kThu | kFri, {{7 * 60, 18 * 60}, {0, 0}}},        // Office hours
+};
+const char* const kSiteTz = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Berlin
+TzRule siteTz;
 const LockConfig kLock{kDoorId, kLockZones, sizeof kLockZones / sizeof kLockZones[0],
-                       kBlacklist, sizeof kBlacklist / sizeof kBlacklist[0]};
+                       kBlacklist, sizeof kBlacklist / sizeof kBlacklist[0],
+                       kProfiles, sizeof kProfiles / sizeof kProfiles[0], &siteTz};
 
 // ------------------------------------------------------------------ hardware
 m5::unit::UnitUnified units;
 m5::unit::UnitNFC nfcUnit{};          // ST25R3916 over I2C
 m5::nfc::NFCLayerA nfcA{nfcUnit};     // ISO14443-A layer
 Esp32Clock lockClock;
+GpioActuator actuator{OC_ACTUATOR_PIN};
+constexpr uint32_t kOpenWindowMs = 3000;   // clutch engaged after OPEN
 
 bool readerReady = false;
 std::string lastUid;                  // suppress repeats while a card stays on
@@ -66,19 +89,32 @@ bool beginReader() {
 }
 
 void printTime(const char* label, uint32_t t) {
+  static const char* const kDay[] = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
   const UtcDateTime d = toUtc(t);
-  Serial.printf("%s%04u-%02u-%02u %02u:%02u:%02u UTC (%lu)\n", label, d.year, d.month, d.day,
-                d.hour, d.minute, d.second, static_cast<unsigned long>(t));
+  const LocalTime l = toLocal(t, siteTz);
+  Serial.printf("%s%04u-%02u-%02u %02u:%02u:%02u UTC = %s %02u:%02u local%s (%lu)\n", label,
+                d.year, d.month, d.day, d.hour, d.minute, d.second, kDay[l.weekday], l.hour,
+                l.minute, l.dst ? " DST" : "", static_cast<unsigned long>(t));
 }
 
 // ------------------------------------------------------------ serial commands
 void handleCommand(const std::string& line) {
   if (line == "help") {
-    Serial.println("commands: time | time <unix-utc-seconds> | help");
+    Serial.println("commands: time | time <unix-utc-seconds> | time reset-hwm |"
+                   " uidmode [auto|key2] | help");
+  } else if (line == "uidmode" || line == "uidmode auto" || line == "uidmode key2") {
+    if (line != "uidmode") forceUidKeyPath = (line == "uidmode key2");
+    Serial.printf("uidmode %s\n", forceUidKeyPath
+                                      ? "key2 (always fetch the real UID via key 2 + GetCardUID)"
+                                      : "auto (anticollision UID; key 2 only for random-UID cards)");
   } else if (line == "time") {
     uint32_t t;
     if (lockClock.now(t)) printTime("time  ", t);
     else Serial.println("time  UNKNOWN (set with: time <unix-utc-seconds>)");
+    if (lockClock.highWater()) printTime("      high-water mark ", lockClock.highWater());
+  } else if (line == "time reset-hwm") {
+    lockClock.resetHighWater();
+    Serial.println("time  high-water mark and time cleared (bench only) - time is UNKNOWN");
   } else if (line.rfind("time ", 0) == 0) {
     char* end = nullptr;
     const unsigned long long v = strtoull(line.c_str() + 5, &end, 10);
@@ -86,7 +122,10 @@ void handleCommand(const std::string& line) {
       Serial.println("time  invalid value (unsigned Unix seconds, UTC)");
       return;
     }
-    lockClock.set(static_cast<uint32_t>(v));
+    if (!lockClock.trySet(static_cast<uint32_t>(v))) {
+      printTime("time  REJECTED (rollback) — high-water mark is ", lockClock.highWater());
+      return;
+    }
     printTime("time  set to ", static_cast<uint32_t>(v));
   } else if (!line.empty()) {
     Serial.printf("unknown command '%s' (try: help)\n", line.c_str());
@@ -154,11 +193,35 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
     Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
     return deny("select application failed");
   }
-  // Per-card read key: AN10922(master read key, UID || AID). Fixed 7-byte UID
-  // only for now; random-UID cards need the key-2 / GetCardUID flow.
-  if (picc.size != 7) return deny("random/short UID not supported yet");
+  // Real UID for key diversification (spec: "Getting the real UID").
+  //  - fixed 7-byte UID: the anticollision UID is the real one;
+  //  - random UID (4 bytes, first byte 0x08): auth with the UID key (key 2),
+  //    then GetCardUID returns the real UID, encrypted.
+  uint8_t realUid[7];
+  const bool randomId = (picc.size == 4 && picc.uid[0] == 0x08);
+  if (picc.size == 7 && !forceUidKeyPath) {
+    memcpy(realUid, picc.uid, 7);
+  } else if (randomId || (picc.size == 7 && forceUidKeyPath)) {
+    if (!card.authenticateAes(kUidKeyNo, kDevUidKey)) {
+      if (card.lastStatus() == kNoResponse) return retry(card.lastError());
+      return deny("UID key authentication failed");
+    }
+    if (!card.getCardUid(realUid)) {
+      if (card.lastStatus() == kNoResponse) return retry(card.lastError());
+      Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
+      return deny("GetCardUID failed");
+    }
+    Serial.printf("      real UID via key 2 + GetCardUID: %02X%02X%02X%02X%02X%02X%02X%s\n",
+                  realUid[0], realUid[1], realUid[2], realUid[3], realUid[4], realUid[5],
+                  realUid[6],
+                  picc.size == 7 ? (memcmp(realUid, picc.uid, 7) == 0 ? "  (matches anticollision UID)"
+                                                                    : "  (MISMATCH!)")
+                                 : "  (random ID card)");
+  } else {
+    return deny("unsupported UID length");
+  }
   uint8_t divInput[10];
-  memcpy(divInput, picc.uid, 7);
+  memcpy(divInput, realUid, 7);
   memcpy(divInput + 7, kSiteAid, 3);
   uint8_t cardReadKey[16];
   if (!crypto::diversifyAn10922(kDevReadMasterKey, divInput, sizeof divInput, cardReadKey)) {
@@ -201,9 +264,17 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   const Result r = decide(h, entries, kLock, timeKnown, now);
   const uint32_t ms = millis() - t0;
   if (r.decision == Decision::Open) {
-    Serial.printf("OPEN  via %s %u%s  (%lu ms)\n",
-                  r.matched.type == kEntryDoor ? "door" : "zone", r.matched.targetId,
-                  r.matched.timeProfile ? ", time profile" : "", static_cast<unsigned long>(ms));
+    if (r.matched.timeProfile) {
+      Serial.printf("OPEN  via %s %u, time profile %u  (%lu ms)\n",
+                    r.matched.type == kEntryDoor ? "door" : "zone", r.matched.targetId,
+                    r.matched.timeProfile, static_cast<unsigned long>(ms));
+    } else {
+      Serial.printf("OPEN  via %s %u  (%lu ms)\n", r.matched.type == kEntryDoor ? "door" : "zone",
+                    r.matched.targetId, static_cast<unsigned long>(ms));
+    }
+    actuator.engage(kOpenWindowMs);
+    Serial.printf("      clutch engaged for %lu ms (pin %d)\n",
+                  static_cast<unsigned long>(kOpenWindowMs), OC_ACTUATOR_PIN);
   } else {
     Serial.printf("DENY  %s  (%lu ms)\n", toString(r.decision), static_cast<unsigned long>(ms));
   }
@@ -226,6 +297,7 @@ void handleTap(m5::nfc::a::PICC& picc) {
 }  // namespace
 
 void setup() {
+  actuator.begin();  // first: make sure the clutch is disengaged
   Serial.begin(115200);
   delay(1500);  // give USB-CDC time to enumerate so the banner isn't lost
 
@@ -242,6 +314,11 @@ void setup() {
     return;
   }
 
+  if (!parsePosixTz(kSiteTz, siteTz)) {
+    Serial.println("ERROR: invalid site time zone rule");
+    return;
+  }
+  lockClock.begin();
   readerReady = beginReader();
   if (!readerReady) {
     Serial.println("ERROR: ST25R3916 not found — check wiring "
@@ -252,7 +329,11 @@ void setup() {
 }
 
 void loop() {
+  const bool wasEngaged = actuator.engaged();
+  actuator.poll();
+  if (wasEngaged && !actuator.engaged()) Serial.println("      clutch released\n");
   pollSerial();
+  lockClock.tick();
   if (!readerReady) {
     delay(50);
     return;

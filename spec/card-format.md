@@ -119,8 +119,9 @@ entries are valid; the rest must be zero.
   works immediately for all cards carrying the zone — no card update needed.
 - **Time profiles** (e.g. "Mon–Fri 07:00–19:00") are defined in the lock and
   delivered by admin card; the card only references them by number. Profile
-  definitions are specified separately. Firmware that does not know a profile
-  treats the entry as **not matching** (fail closed).
+  definitions and the site time zone: [`time-profiles.md`](time-profiles.md).
+  Firmware that does not know a profile treats the entry as **not matching**
+  (fail closed).
 
 Address space: 65 535 doors and 65 535 zones. The card size depends only on how
 many rights one person has, not on how big the site is.

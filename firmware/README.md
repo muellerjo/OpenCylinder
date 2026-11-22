@@ -34,7 +34,8 @@ port swaps the transport and crypto backends, not the logic.
   M5Unit-NFC ISO-DEP layer, native DESFire frames), `Esp32Clock`.
 - `src/main.cpp` — Phase 2 bench lock.
 - `include/version.h`, `scripts/version.py` — build version stamping.
-- `test/host/` — host tests (plain g++, no hardware):
+- `test/host/` — host tests (plain g++, no hardware) — decision logic,
+  time profiles, time zone vs. Python `zoneinfo`, rollback rule:
   ```
   cd test/host && g++ -std=c++11 -Wall -Wextra -I../../lib/access_decision/src \
     test_access_decision.cpp ../../lib/access_decision/src/*.cpp -o t && ./t
@@ -55,8 +56,27 @@ Communication failures (the card browns out during the AES computation when
 it sits at a bad angle or is still moving into the field) are retried up to
 3 times; real refusals are final at once.
 
-**Serial commands** (dev only — production gets the time from admin cards):
-`time`, `time <unix-utc-seconds>`, `help`. After a reset the time is unknown.
+**Time profiles** of the example (day shift, cleaning shift, office hours)
+and the site time zone `CET-1CEST,M3.5.0,M10.5.0/3` are built in
+([`spec/time-profiles.md`](../spec/time-profiles.md)).
+
+**Clock & rollback:** the time is RAM only (reset → unknown); the high-water
+mark (latest accepted time) is kept in NVS flash, and `time` refuses anything
+more than 5 minutes earlier than it.
+
+**Actuator:** GPIO4 (XIAO D2) is high for 3 s after `OPEN` — an LED with a
+330 Ω resistor to GND, or a 3.3 V relay module. Forced low at boot
+(disengaged by default).
+
+**Serial commands** (dev only — production gets these from admin cards):
+
+| Command | |
+|---|---|
+| `time` | UTC + local time, high-water mark |
+| `time <unix-utc-seconds>` | set the time (rollback rule applies) |
+| `time reset-hwm` | forget the high-water mark and the time (bench only) |
+| `uidmode key2` / `uidmode auto` | force the random-UID path (key 2 + `GetCardUID`) on fixed-UID cards / back to normal |
+| `help` | |
 
 **Test cards:** write any example user onto a DESFire dev card with
 [`examples/hospital/write_test_card.py`](../examples/hospital/write_test_card.py).
@@ -68,7 +88,8 @@ it sits at a bad angle or is still moving into the field) are retried up to
 | Eva (2003), blacklisted | `DENY credential blacklisted` |
 | Ben (4002), time unknown | `DENY time unknown and card has an expiry` |
 | Ben (4002), after `time 1795510800` | `DENY card expired` |
-| Olga (4001), cleaning shift | `DENY right exists, but not at this time` (time profiles not implemented yet → fail closed) |
+| Olga (4001), at `time 1795510800` (Tue 10:00 local) | `OPEN via zone 3, time profile 2` |
+| Olga (4001), at `time 1795572000` (Wed 03:00 local) | `DENY right exists, but not at this time` |
 
 ## Phase 1 bring-up ✅ (2026-11-22)
 

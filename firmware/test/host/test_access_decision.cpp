@@ -29,7 +29,7 @@ struct Card {
 // Bench lock = example door 4 "Ward 1 - ward door", zones 3 + 4, blacklist 2003.
 static const uint16_t kZones[] = {3, 4};
 static const uint32_t kBlacklist[] = {2003};
-static const LockConfig kLock{4, kZones, 2, kBlacklist, 1};
+static const LockConfig kLock{4, kZones, 2, kBlacklist, 1, nullptr, 0, nullptr};
 
 static Result run(const Card& c, bool timeKnown, uint32_t now) {
   CardHeader h;
@@ -72,9 +72,85 @@ int main() {
   r = run(koch, true, now);
   CHECK(r.decision == Decision::Open && r.matched.targetId == 3);
 
-  // Deliberate difference: firmware has no time-profile definitions yet and
-  // fails closed (Python opens Olga at 10:00 via profile 2).
+  // Lock WITHOUT profile definitions: entries with a profile fail closed.
   CHECK(run(olga, true, now).decision == Decision::DenyNotAtThisTime);
+
+  // ---- Lock WITH the example's profiles + Europe/Berlin (spec/time-profiles.md)
+  TzRule berlin;
+  CHECK(parsePosixTz("CET-1CEST,M3.5.0,M10.5.0/3", berlin));
+  static const TimeProfile kProfiles[] = {
+      {1, 0x7F, {{360, 1200}, {0, 0}}},                          // day shift 06-20 daily
+      {2, kMon | kTue | kWed | kThu | kFri | kSat, {{300, 660}, {0, 0}}},  // cleaning 05-11
+      {3, kMon | kTue | kWed | kThu | kFri, {{420, 1080}, {0, 0}}},        // office 07-18
+      {9, kMon, {{1320, 360}, {0, 0}}},                          // night Mon 22:00-Tue 06:00
+  };
+  const LockConfig lockP{4, kZones, 2, kBlacklist, 1, kProfiles, 4, &berlin};
+  auto runP = [&](const Card& c, bool known, uint32_t t) {
+    CardHeader hh;
+    parseHeader(c.file0.data(), c.file0.size(), hh);
+    std::vector<AccessEntry> ee;
+    parseEntries(c.file1.data(), c.file1.size(), hh.entryCount, ee);
+    return decide(hh, ee, lockP, known, t);
+  };
+  const Card peter{{0x01, 0x04, 0, 0, 0xB9, 0x0B, 0, 0, 0, 0, 0, 0, 0x80, 0xF2, 0x03, 0x6B},
+                   {0x02, 0x01, 0, 0, 0x02, 0x03, 0, 0x01, 0x02, 0x07, 0, 0, 0x02, 0x08, 0, 0}};
+  const uint32_t night = 1795485600;  // Tue 2026-11-24 03:00 Berlin
+  // Same as check_access.py --door 4 at 10:00 and 03:00:
+  r = runP(olga, true, now);
+  CHECK(r.decision == Decision::Open && r.matched.targetId == 3 && r.matched.timeProfile == 2);
+  CHECK(runP(olga, true, night).decision == Decision::DenyNotAtThisTime);
+  CHECK(runP(peter, true, now).decision == Decision::Open);
+  CHECK(runP(peter, true, night).decision == Decision::DenyNotAtThisTime);
+  CHECK(runP(sara, true, night).decision == Decision::Open);  // profile 0 = always
+  CHECK(runP(peter, false, 0).decision == Decision::DenyNotAtThisTime);  // time unknown
+
+  // Night shift wrapping past midnight (profile 9: Mon 22:00 -> Tue 06:00)
+  auto lt = [&](uint32_t t) { return toLocal(t, berlin); };
+  CHECK(profileActive(kProfiles[3], lt(1795467600)));   // Mon 22:00 (start, inclusive)
+  CHECK(profileActive(kProfiles[3], lt(1795485600)));   // Tue 03:00 (from Monday)
+  CHECK(!profileActive(kProfiles[3], lt(1795496400)));  // Tue 06:00 -> ended
+  CHECK(!profileActive(kProfiles[3], lt(1795554000)));  // Tue 22:00 (Tue not in mask)
+  CHECK(!profileActive(kProfiles[3], lt(1795460400)));  // Mon 20:00
+
+  // Local time vs Python zoneinfo("Europe/Berlin") incl. DST switches
+  struct V { uint32_t t; uint16_t y; uint8_t mo, d, h, mi, wd, dst; };
+  static const V vectors[] = {
+    {1774745999u, 2026, 3, 29, 1, 59, 6, 0},
+    {1774746000u, 2026, 3, 29, 3, 0, 6, 1},
+    {1792889999u, 2026, 10, 25, 2, 59, 6, 1},
+    {1792890000u, 2026, 10, 25, 2, 0, 6, 0},
+    {1795510800u, 2026, 11, 24, 10, 0, 1, 0},
+    {1782945000u, 2026, 7, 2, 0, 30, 3, 1},
+    {1806195599u, 2027, 3, 28, 1, 59, 6, 0},
+    {1806195600u, 2027, 3, 28, 3, 0, 6, 1},
+    {2147483648u, 2038, 1, 19, 4, 14, 1, 0},
+    {2234998799u, 2040, 10, 28, 2, 59, 6, 1},
+    {2234998800u, 2040, 10, 28, 2, 0, 6, 0},
+    {4102443000u, 2100, 1, 1, 0, 30, 4, 0},
+    {1709208000u, 2024, 2, 29, 13, 0, 3, 0},
+    {1798758000u, 2027, 1, 1, 0, 0, 4, 0},
+  };
+  for (const V& v : vectors) {
+    const LocalTime l = toLocal(v.t, berlin);
+    const bool ok = l.year == v.y && l.month == v.mo && l.day == v.d && l.hour == v.h &&
+                    l.minute == v.mi && l.weekday == v.wd && l.dst == (v.dst != 0);
+    if (!ok) std::printf("  tz mismatch at %u: got %04u-%02u-%02u %02u:%02u wd%u dst%u\n", v.t,
+                         l.year, l.month, l.day, l.hour, l.minute, l.weekday, l.dst);
+    CHECK(ok);
+  }
+  TzRule tmp;
+  CHECK(parsePosixTz("UTC0", tmp) && !tmp.hasDst && tmp.stdOffset == 0);
+  CHECK(parsePosixTz("EST5EDT,M3.2.0,M11.1.0", tmp) && tmp.stdOffset == -18000 &&
+        tmp.dstOffset == -14400);
+  CHECK(!parsePosixTz("CET-1CEST,J60,M10.5.0", tmp));  // Jn form not supported
+  CHECK(!parsePosixTz("", tmp));
+
+  // Rollback rule (§2.5 rule 3, tolerance 5 min)
+  CHECK(timeUpdateAllowed(1000, 0));                   // no mark yet
+  CHECK(timeUpdateAllowed(now, now));                  // same time
+  CHECK(timeUpdateAllowed(now - 299, now));            // within tolerance
+  CHECK(!timeUpdateAllowed(now - 301, now));           // rollback rejected
+  CHECK(timeUpdateAllowed(now + 86400, now));          // forward always ok
 
   // Time unknown: cards with an expiry are refused, permanent cards still work.
   CHECK(run(olga, false, 0).decision == Decision::DenyTimeUnknown);

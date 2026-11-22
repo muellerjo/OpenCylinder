@@ -1,9 +1,11 @@
 #pragma once
 // Dev-board clock: counts from the ESP32's 64-bit microsecond timer after the
 // time has been set (serial `time` command for now, admin card later).
-// RAM only: a reset means "time unknown" — handy for testing the fail-safe
-// rule. The production lock uses an RTC with backup (see docs §2.5).
+// The time itself is RAM only — a reset means "time unknown" (fail-safe rule).
+// The rollback high-water mark is persisted in NVS flash, so it survives
+// resets. The production lock uses an RTC with backup (docs §2.5).
 
+#include <Preferences.h>
 #include <esp_timer.h>
 
 #include "clock.h"
@@ -12,6 +14,11 @@ namespace opencylinder {
 
 class Esp32Clock : public IClock {
  public:
+  void begin() {
+    prefs_.begin("oc-clock", false);
+    highWater_ = prefs_.getUInt("hw", 0);
+  }
+
   bool now(uint32_t& unixUtc) const override {
     if (!set_) return false;
     const uint64_t elapsed = static_cast<uint64_t>(esp_timer_get_time() - refUs_) / 1000000u;
@@ -21,16 +28,50 @@ class Esp32Clock : public IClock {
     return true;
   }
 
+  // Unconditional set (IClock); callers go through trySet() for the rule.
   void set(uint32_t unixUtc) override {
     base_ = unixUtc;
     refUs_ = esp_timer_get_time();
     set_ = true;
+    raiseHighWater(unixUtc);
+  }
+
+  // Set the time only if the rollback rule allows it.
+  bool trySet(uint32_t unixUtc) {
+    if (!timeUpdateAllowed(unixUtc, highWater_)) return false;
+    set(unixUtc);
+    return true;
+  }
+
+  // Call periodically: keeps the high-water mark close to the running time
+  // (at most one flash write per 10 minutes).
+  void tick() {
+    uint32_t t;
+    if (now(t) && t >= highWater_ + 600) raiseHighWater(t);
+  }
+
+  uint32_t highWater() const { return highWater_; }
+
+  // Bench only: forget the high-water mark AND the current time (otherwise
+  // tick() would immediately raise the mark again from the running clock).
+  void resetHighWater() {
+    set_ = false;
+    highWater_ = 0;
+    prefs_.putUInt("hw", 0);
   }
 
  private:
+  void raiseHighWater(uint32_t t) {
+    if (t <= highWater_) return;
+    highWater_ = t;
+    prefs_.putUInt("hw", t);
+  }
+
+  Preferences prefs_;
   bool set_ = false;
   uint32_t base_ = 0;
   int64_t refUs_ = 0;
+  uint32_t highWater_ = 0;
 };
 
 }  // namespace opencylinder

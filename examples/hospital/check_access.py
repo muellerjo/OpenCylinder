@@ -93,7 +93,16 @@ class Lock:
             return False                          # unknown profile / time: fail closed
         local = datetime.fromtimestamp(now, self.tz)
         hhmm = local.strftime("%H:%M")
-        return DAYS[local.weekday()] in p["days"] and p["from"] <= hhmm < p["to"]
+        today = DAYS[local.weekday()]
+        yesterday = DAYS[(local.weekday() + 6) % 7]
+        for iv in p.get("intervals", [{"from": p.get("from"), "to": p.get("to")}]):
+            f, t = iv["from"], iv["to"]
+            if f < t and today in p["days"] and f <= hhmm < t:
+                return True
+            if f > t:  # wraps past midnight, belongs to the day it starts on
+                if (today in p["days"] and hhmm >= f) or (yesterday in p["days"] and hhmm < t):
+                    return True
+        return False
 
     def decide(self, file0, file1, now):
         """Decision logic from the spec, on raw card bytes. Returns (symbol, reason).

@@ -128,8 +128,9 @@ verifies this with the Proxmark's own `--kdf AN10922`. Needs the Python
 
 ## Not covered (yet)
 
-- Time-profile definitions are informal here; their on-lock format and how
-  they reach the lock (admin card) are still to be specified — including
-  daylight-saving rules, since locks keep UTC.
+- Time profiles here are written informally (`days`, `from`, `to`); the
+  on-lock format and the site time-zone rule are in
+  [`spec/time-profiles.md`](../../spec/time-profiles.md). How they reach the
+  lock (admin card) is a draft: [`spec/admin-card.md`](../../spec/admin-card.md).
 - Authentication and key diversification are assumed to have succeeded; this
   example is about the *data*, not the crypto.

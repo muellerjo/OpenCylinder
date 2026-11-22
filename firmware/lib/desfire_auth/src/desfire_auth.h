@@ -66,9 +66,18 @@ class DesfireAuth {
   bool readDataEncrypted(uint8_t fileNo, uint32_t offset, uint32_t length,
                          std::vector<uint8_t>& out);
 
+  // GetCardUID (0x51): the card's real 7-byte UID, also on random-UID cards.
+  // Needs a preceding authenticateAes (any key); response is encrypted with
+  // CRC32 like a "full" read.
+  bool getCardUid(uint8_t uid[7]);
+
  private:
   void resetSession();
   bool fail(const char* where, uint8_t status = 0xFF);
+  // Send cmd || hdr (plain, CMAC-chained IV) and receive an encrypted
+  // response of `length` plaintext bytes + CRC32 + zero padding.
+  bool exchangeEncrypted(uint8_t cmd, const uint8_t* hdr, size_t hdrLen,
+                         uint32_t length, std::vector<uint8_t>& out);
 
   IDesfireTransport& t_;
   bool authenticated_ = false;

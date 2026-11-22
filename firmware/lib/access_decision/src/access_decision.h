@@ -7,6 +7,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "clock.h"
+
 namespace opencylinder {
 
 constexpr uint8_t  kFormatVersion1 = 1;
@@ -32,13 +34,35 @@ struct AccessEntry {
   uint8_t  timeProfile;   // 0 = always
 };
 
+// Time profile — spec/time-profiles.md. Local wall time of the site.
+// An interval with from > to wraps past midnight and belongs to the day it
+// starts on (night shift 22:00-06:00 on Mon covers Mon 22:00 - Tue 06:00).
+struct TimeInterval {
+  uint16_t from;   // minute of day 0..1439
+  uint16_t to;     // minute of day 1..1440, exclusive; from == to: unused
+};
+struct TimeProfile {
+  uint8_t id;               // 1..255 (0 = "always" is implicit)
+  uint8_t days;             // bit 0 = Monday ... bit 6 = Sunday
+  TimeInterval iv[2];
+};
+constexpr uint8_t kMon = 1 << 0, kTue = 1 << 1, kWed = 1 << 2, kThu = 1 << 3,
+                  kFri = 1 << 4, kSat = 1 << 5, kSun = 1 << 6;
+
+// Does profile `p` allow local time `lt`?
+bool profileActive(const TimeProfile& p, const LocalTime& lt);
+
 // What one lock knows after commissioning (never stored on the card).
+// Plain aggregate: trailing members may be omitted (zero-initialized).
 struct LockConfig {
   uint16_t doorId;
   const uint16_t* zones;
   size_t zoneCount;
   const uint32_t* blacklist;   // credential IDs
   size_t blacklistCount;
+  const TimeProfile* profiles; // time-profile definitions (may be null)
+  size_t profileCount;
+  const TzRule* tz;            // site time zone (null = UTC)
 };
 
 enum class Decision : uint8_t {

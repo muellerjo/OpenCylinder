@@ -26,6 +26,16 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   Verified on a DESFire EV1 for all bench cases (Sara open; Max no right;
   Eva blacklisted; Ben time-unknown and expired; Olga not at this time);
   host tests for the decision logic. Debug env `xiao-c3-debug` with NFC library logs.
+- fw: time profiles (weekday mask, 2 intervals, past-midnight wrap) and site
+  time zone as POSIX TZ rule incl. DST — verified against Python zoneinfo;
+  spec/time-profiles.md.
+- fw: rollback protection — high-water mark in NVS, time updates more than
+  5 min earlier are refused.
+- fw: random-UID support — key 2 + encrypted GetCardUID, testable on
+  fixed-UID cards via `uidmode key2`.
+- fw: bench actuator (GPIO, disengaged by default, 3 s window, hard limit).
+- spec: admin-card.md draft (separate admin application, TLV payload,
+  anti-replay sequence, lock-unique transport key) — open decisions marked.
 - fw + examples: per-card keys — read/issuer keys diversified with NXP
   AN10922 (M = UID || AID), boot self-test with the AN10922 example vector;
   `an10922.py` and `write_test_card.py` write diversified keys and verify

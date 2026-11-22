@@ -27,6 +27,7 @@ constexpr uint8_t CMD_ADDITIONAL_FRAME = 0xAF;
 constexpr uint8_t CMD_SELECT_APP       = 0x5A;
 constexpr uint8_t CMD_AUTH_AES         = 0xAA;
 constexpr uint8_t CMD_READ_DATA        = 0xBD;
+constexpr uint8_t CMD_GET_CARD_UID     = 0x51;
 constexpr uint8_t STATUS_OK            = 0x00;
 
 // Rotate a 16-byte block left by one byte.
@@ -131,53 +132,60 @@ bool DesfireAuth::authenticateAes(uint8_t keyNo, const uint8_t key[16]) {
 bool DesfireAuth::readDataEncrypted(uint8_t fileNo, uint32_t offset,
                                     uint32_t length, std::vector<uint8_t>& out) {
   out.clear();
-  if (!authenticated_ || length == 0 || length > kMaxReadLength ||
-      offset > 0xFFFFFF) {
-    return false;
+  if (!authenticated_) return fail("read: not authenticated");
+  if (length == 0 || length > kMaxReadLength || offset > 0xFFFFFF) {
+    return fail("read: bad length/offset");
   }
-
   // Command header: file no | offset (3, LE) | length (3, LE).
   uint8_t hdr[7];
   hdr[0] = fileNo;
   putLe24(hdr + 1, offset);
   putLe24(hdr + 4, length);
+  return exchangeEncrypted(CMD_READ_DATA, hdr, sizeof hdr, length, out);
+}
 
+bool DesfireAuth::getCardUid(uint8_t uid[7]) {
+  if (!authenticated_) return fail("get uid: not authenticated");
+  std::vector<uint8_t> out;
+  if (!exchangeEncrypted(CMD_GET_CARD_UID, nullptr, 0, 7, out)) return false;
+  memcpy(uid, out.data(), 7);
+  wipe(out.data(), out.size());
+  return true;
+}
+
+bool DesfireAuth::exchangeEncrypted(uint8_t cmd, const uint8_t* hdr, size_t hdrLen,
+                                    uint32_t length, std::vector<uint8_t>& out) {
+  out.clear();
   // EV1 secure messaging: every command updates the IV with a CMAC over
   // cmd || header, computed with the session key, even though it is sent plain.
-  uint8_t cmdMsg[8];
-  cmdMsg[0] = CMD_READ_DATA;
-  memcpy(cmdMsg + 1, hdr, 7);
-  if (!crypto::cmacAes128(sessionKey_, iv_, cmdMsg, sizeof cmdMsg, iv_)) {
-    resetSession();
-    return false;
+  uint8_t cmdMsg[1 + 16];
+  if (hdrLen > 16) return fail("exchange: header too long");
+  cmdMsg[0] = cmd;
+  if (hdrLen) memcpy(cmdMsg + 1, hdr, hdrLen);
+  if (!crypto::cmacAes128(sessionKey_, iv_, cmdMsg, 1 + hdrLen, iv_)) {
+    return fail("exchange: cmac error");
   }
 
-  // Collect the encrypted response; long reads come in several frames (0xAF).
+  // Collect the encrypted response; long responses come in frames (0xAF).
   std::vector<uint8_t> enc;
   DesfireResponse r;
-  bool ok = t_.transceive(CMD_READ_DATA, hdr, sizeof hdr, r);
+  bool ok = t_.transceive(cmd, hdr, hdrLen, r);
   while (ok && r.status == CMD_ADDITIONAL_FRAME) {
     enc.insert(enc.end(), r.data.begin(), r.data.end());
     ok = t_.transceive(CMD_ADDITIONAL_FRAME, nullptr, 0, r);
   }
-  if (!ok || r.status != STATUS_OK) {
-    resetSession();
-    return false;
-  }
+  if (!ok) return fail("exchange: no response");
+  if (r.status != STATUS_OK) return fail("exchange: card status", r.status);
   enc.insert(enc.end(), r.data.begin(), r.data.end());
 
   // Plaintext = data || CRC32(data || status) || zero padding, AES-CBC.
   const size_t expected = ((length + 4 + 15) / 16) * 16;
-  if (enc.size() != expected) {
-    resetSession();
-    return false;
-  }
+  if (enc.size() != expected) return fail("exchange: wrong length", r.status);
   std::vector<uint8_t> plain(enc.size());
   uint8_t nextIv[16];
   memcpy(nextIv, enc.data() + enc.size() - 16, 16);  // IV for the next command
   if (!aesCbc(sessionKey_, false, iv_, enc.data(), plain.data(), enc.size())) {
-    resetSession();
-    return false;
+    return fail("exchange: aes error");
   }
   memcpy(iv_, nextIv, 16);
 
@@ -193,8 +201,7 @@ bool DesfireAuth::readDataEncrypted(uint8_t fileNo, uint32_t offset,
 
   if (crc != cardCrc || !padOk) {
     wipe(plain.data(), plain.size());
-    resetSession();
-    return false;
+    return fail("exchange: CRC/padding mismatch");
   }
   out.assign(plain.begin(), plain.begin() + length);
   wipe(plain.data(), plain.size());

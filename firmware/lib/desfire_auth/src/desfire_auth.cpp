@@ -28,6 +28,7 @@ constexpr uint8_t CMD_SELECT_APP       = 0x5A;
 constexpr uint8_t CMD_AUTH_AES         = 0xAA;
 constexpr uint8_t CMD_READ_DATA        = 0xBD;
 constexpr uint8_t CMD_GET_CARD_UID     = 0x51;
+constexpr uint8_t CMD_WRITE_DATA       = 0x3D;
 constexpr uint8_t STATUS_OK            = 0x00;
 
 // Rotate a 16-byte block left by one byte.
@@ -142,6 +143,35 @@ bool DesfireAuth::readDataEncrypted(uint8_t fileNo, uint32_t offset,
   putLe24(hdr + 1, offset);
   putLe24(hdr + 4, length);
   return exchangeEncrypted(CMD_READ_DATA, hdr, sizeof hdr, length, out);
+}
+
+bool DesfireAuth::writeDataPlain(uint8_t fileNo, uint32_t offset, const uint8_t* data,
+                                 uint32_t length) {
+  if (authenticated_) return fail("plain write: only without a session");
+  if (length == 0 || length > kMaxReadLength || offset > 0xFFFFFF) {
+    return fail("plain write: bad length/offset");
+  }
+  // Keep every native frame well below the card's frame size (FSC 64).
+  constexpr uint32_t kFirstChunk = 40, kNextChunk = 48;
+  uint8_t buf[7 + kNextChunk];
+  buf[0] = fileNo;
+  putLe24(buf + 1, offset);
+  putLe24(buf + 4, length);
+  uint32_t n = length < kFirstChunk ? length : kFirstChunk;
+  memcpy(buf + 7, data, n);
+  DesfireResponse r;
+  if (!t_.transceive(CMD_WRITE_DATA, buf, 7 + n, r)) return fail("plain write: no response");
+  uint32_t done = n;
+  while (done < length) {
+    if (r.status != CMD_ADDITIONAL_FRAME) return fail("plain write: card status", r.status);
+    n = (length - done) < kNextChunk ? (length - done) : kNextChunk;
+    if (!t_.transceive(CMD_ADDITIONAL_FRAME, data + done, n, r)) {
+      return fail("plain write: no response");
+    }
+    done += n;
+  }
+  if (r.status != STATUS_OK) return fail("plain write: card status", r.status);
+  return true;
 }
 
 bool DesfireAuth::getCardUid(uint8_t uid[7]) {

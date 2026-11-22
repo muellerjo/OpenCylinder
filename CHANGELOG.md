@@ -38,6 +38,10 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw + examples: identify card — the lock writes its public identity into a
+  free-access file (any state; never opens); chunked plain WriteData;
+  `write_identify_card.py` sets up, reads and cross-checks against an
+  engraved QR. Verified on the bench (OWNED and FACTORY, mismatch warning).
 - fw: device identity — permanent ECDH P-256 device key pair generated on
   first boot (NVS), QR text `OC1:<device ID>:<compressed key>` in the banner
   and via `id`; lock states FACTORY (opens nothing) / OWNED; bench lock

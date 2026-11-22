@@ -148,6 +148,19 @@ The script reuses an existing admin application and only rewrites its files:
 `hf mfdes formatpicc` does. Recreating it on every run fills a 4K card after a
 few runs (`--recreate` forces it anyway).
 
+## Identify card
+
+A card with the identify application (`4F4349`, one free-access file) makes
+any lock write its public identity onto it — state, device ID, public key,
+firmware version, site and door. Use a separate card (an identify card never
+opens a door).
+
+```
+python3 write_identify_card.py                      # set up / clear
+python3 write_identify_card.py --read               # after tapping a lock
+python3 write_identify_card.py --read --qr "OC1:…"  # compare with the engraved QR
+```
+
 ## Not covered (yet)
 
 - Time profiles here are written informally (`days`, `from`, `to`); the

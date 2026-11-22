@@ -66,6 +66,11 @@ class DesfireAuth {
   bool readDataEncrypted(uint8_t fileNo, uint32_t offset, uint32_t length,
                          std::vector<uint8_t>& out);
 
+  // WriteData (0x3D) to a file with FREE write access, communication mode
+  // plain, without authentication (identify card, spec/admin-card.md §5.5).
+  // Long data is sent in DESFire-level frames (0xAF chaining).
+  bool writeDataPlain(uint8_t fileNo, uint32_t offset, const uint8_t* data, uint32_t length);
+
   // GetCardUID (0x51): the card's real 7-byte UID, also on random-UID cards.
   // Needs a preceding authenticateAes (any key); response is encrypted with
   // CRC32 like a "full" read.

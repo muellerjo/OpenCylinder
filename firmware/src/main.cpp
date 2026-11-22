@@ -203,6 +203,9 @@ void printEvent(const Event& e) {
     case EventType::Boot:
       Serial.printf("reset reason %u\n", e.code);
       break;
+    case EventType::Identify:
+      Serial.printf("identity written (state %s)\n", e.code ? "OWNED" : "FACTORY");
+      break;
     case EventType::Bench:
       Serial.printf("%s\n", e.code == 1 ? "time reset-hwm" : e.code == 2 ? "mgmt reset"
                            : e.code == 3 ? "log clear" : e.code == 4 ? "state -> FACTORY"
@@ -444,6 +447,41 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
   return Outcome::Final;
 }
 
+// Identify card (spec/admin-card.md §5.5): write our public identity into
+// the card's free-access file. Works in every state; never opens; the lock
+// takes no instructions from this card.
+constexpr uint8_t kIdentifyAid[3] = {0x49, 0x43, 0x4F};  // 4F4349, wire order
+
+void parseVersion(const char* v, uint8_t out[3]) {
+  unsigned a = 0, b = 0, c = 0;
+  sscanf(v, "%u.%u.%u", &a, &b, &c);
+  out[0] = static_cast<uint8_t>(a);
+  out[1] = static_cast<uint8_t>(b);
+  out[2] = static_cast<uint8_t>(c);
+}
+
+Outcome handleIdentifyCard(DesfireAuth& card) {
+  uint8_t rec[64] = {0};
+  rec[0] = 1;                                         // format
+  rec[1] = static_cast<uint8_t>(lockState);           // 0 FACTORY, 1 OWNED
+  memcpy(rec + 2, deviceId, 8);
+  memcpy(rec + 10, identity.publicKey(), 33);
+  parseVersion(FW_VERSION, rec + 43);
+  if (lockState == LockState::Owned) {
+    memcpy(rec + 46, kSiteAid, 3);
+    rec[49] = static_cast<uint8_t>(kDoorId);
+    rec[50] = static_cast<uint8_t>(kDoorId >> 8);
+  }
+  if (!card.writeDataPlain(0, 0, rec, sizeof rec)) return cardFailure(card, "identify write");
+  char qr[100];
+  identity.qrText(qr, sizeof qr);
+  Serial.printf("IDENT identity written to identify card (state %s)\n      %s\n",
+                lockStateName(), qr);
+  eventLog.add(EventType::Identify, static_cast<uint8_t>(lockState), timeOrZero());
+  led.show(LedPattern::Admin, 1500);
+  return Outcome::Final;
+}
+
 Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   const uint32_t t0 = millis();
   tapCredential = 0;
@@ -455,6 +493,10 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   if (!dep) return deny("no ISO-DEP context");
   M5DesfireTransport transport{*dep};
   DesfireAuth card{transport};
+
+  // Identify card? Works in every state (also FACTORY).
+  if (card.selectApplication(kIdentifyAid)) return handleIdentifyCard(card);
+  if (card.lastStatus() == kNoResponse) return retry(card.lastError());
 
   if (lockState == LockState::Factory) {
     // FACTORY opens nothing; commissioning and identify cards come next.

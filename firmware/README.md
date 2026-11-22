@@ -88,6 +88,12 @@ pseudo-random. States: **FACTORY** (opens nothing) and **OWNED**. Until
 commissioning is implemented, the bench lock starts OWNED by the built-in dev
 test site (`OC_DEV_BUILTIN_SITE`).
 
+**Identify card:** a card with the identify application (`4F4349`) is
+checked first, in every state: the lock writes its public identity (state,
+device ID, public key, firmware version, site AID, door) into the card's
+free-access file and never opens. Set up / read with
+[`examples/hospital/write_identify_card.py`](../examples/hospital/write_identify_card.py).
+
 **Event log:** every boot, opening, refusal (with reason code), admin tap
 and time change is recorded locally — 16-byte records in a ring buffer
 (64 entries in NVS on the dev board; `lib/eventlog`). It contains

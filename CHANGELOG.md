@@ -38,6 +38,14 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- docs: online-architecture.md — update points, online doors, radio; firmware
+  as board × variant, offline builds without radio code, remote unlock off by
+  default.
+- spec: admin card payload is a signed management bundle (ECDSA P-256, site
+  key in the encoder, public key in locks), carrier-independent; admin-card
+  design decisions recorded.
+- fw: variant marking (`OC_VARIANT_*`), banner `0.1.0+<board>.<variant>`,
+  compile guard against remote unlock in offline builds.
 - fw + examples: per-card keys — read/issuer keys diversified with NXP
   AN10922 (M = UID || AID), boot self-test with the AN10922 example vector;
   `an10922.py` and `write_test_card.py` write diversified keys and verify

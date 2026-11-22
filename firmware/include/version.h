@@ -12,6 +12,15 @@
 #define OC_BOARD_NAME "unknown"
 #endif
 
+#ifndef OC_VARIANT_NAME
+#define OC_VARIANT_NAME "unknown"
+#endif
+
+// Remote unlock must never be part of an offline build (docs/online-architecture.md).
+#if defined(OC_VARIANT_OFFLINE) && defined(OC_FEATURE_REMOTE_UNLOCK)
+#error "OC_FEATURE_REMOTE_UNLOCK is not allowed in an offline variant"
+#endif
+
 namespace opencylinder {
 
 // Highest card record format this firmware understands (spec/card-format.md).

@@ -2,7 +2,8 @@
 
 Open source smart lock — hardware, firmware and software — for an electronic
 Euro-profile cylinder that **you** own end to end: your cards, your keys, your
-commissioning. Fully offline, no radio, no cloud, no vendor.
+commissioning. Offline by default — no radio, no cloud, no vendor; online
+components are optional additions ([`docs/online-architecture.md`](docs/online-architecture.md)).
 
 > **Status: early development.** Nothing here is secure for a real door yet.
 > See [Security status](#security-status).
@@ -71,6 +72,11 @@ details beyond the public pages are not compared here.*
 - **Offline by design:** blacklist updates, time sync and commissioning travel
   on the admin card — no radio means no remote attack surface
   ([`docs/lifecycle-and-security.md`](docs/lifecycle-and-security.md)).
+- **Online optional:** all management data is a *signed bundle*, so the same
+  data can later also arrive via online update points, online doors or radio
+  — the lock verifies the signature, never the carrier. Firmware is built per
+  **board × variant** (`xiao-c3-offline`, …); offline builds contain no radio
+  code.
 - **Mechanics:** outer knob freewheels by default; the clutch couples it to the
   cam only after a valid card. Inner knob is always coupled (free egress)
   ([`hardware/mechanics/clutch-design.md`](hardware/mechanics/clutch-design.md)).
@@ -111,6 +117,8 @@ swaps transport and crypto backends, not the logic.
 - **Phase 3 — tools:** card personalisation and lock commissioning.
 - **Phase 4 — hardening:** hardware key storage, battery + low power, clutch
   prototype, enclosure.
+- **Later — online (optional):** update points (online readers writing bundles
+  onto user cards) → online doors → radio variants, if ever.
 
 ## Security status
 

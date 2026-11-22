@@ -24,6 +24,19 @@ change; `1.0.0` is the first release meant to be installed on a real door.
 - **MINOR** — new capability, backwards compatible.
 - **PATCH** — fixes only.
 
+## Firmware variants
+
+Firmware is built per **board × variant** (`docs/online-architecture.md`),
+e.g. `xiao-c3-offline`, `nrf52-online-ble`. The variant is part of every
+version string as SemVer build metadata and of every release file name:
+
+```
+0.2.0+xiao-c3.offline        ->  opencylinder-fw-0.2.0-xiao-c3-offline.bin
+```
+
+All variants of one release share the `fw-vX.Y.Z` tag; offline builds contain
+no radio code at all.
+
 ## Firmware build stamping
 
 `firmware/scripts/version.py` runs before every PlatformIO build and injects:

@@ -310,8 +310,8 @@ void setup() {
   Serial.begin(115200);
   delay(1500);  // give USB-CDC time to enumerate so the banner isn't lost
 
-  Serial.printf("OpenCylinder fw %s (%s) board=%s card-format<=%u\n", FW_VERSION, FW_GIT,
-                OC_BOARD_NAME, kCardFormatVersion);
+  Serial.printf("OpenCylinder fw %s+%s.%s (%s) card-format<=%u\n", FW_VERSION, OC_BOARD_NAME,
+                OC_VARIANT_NAME, FW_GIT, kCardFormatVersion);
   Serial.printf("Phase 2 bench: door %u (zones 3, 4), site 4F4331, I2C SDA=%d SCL=%d\n",
                 kDoorId, OC_I2C_SDA, OC_I2C_SCL);
 

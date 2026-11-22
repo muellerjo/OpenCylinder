@@ -38,6 +38,11 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- spec: commissioning redesigned — per-lock ECDH P-256 device key pair
+  (permanent, public key as QR on the electronics module) replaces the
+  secret transport key; ECIES commissioning record (AES-128-GCM, HKDF);
+  lock states FACTORY/OWNED; targeted reassignment and decommission records;
+  identify card; site database; recovery without paperwork.
 - fw: device ID now in MAC byte order (matches esptool / USB serial);
   serial input ignores ANSI escape sequences (arrow keys); optional,
   git-ignored `platformio_local.ini` for a stable `/dev/serial/by-id/` port

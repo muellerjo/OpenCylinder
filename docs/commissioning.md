@@ -19,33 +19,45 @@ FACTORY/TRANSPORT ──commission──► OWNED ──decommission (admin)─�
 ```
 
 ## Bootstrap security — the one thing to get right
-A blank lock must accept its first owner, but nobody else must be able to
-re-own it. So:
-- The blank lock ships with a **transport key** (a known bootstrap secret).
-- **First commission:** your tool authenticates with the transport key, injects
-  your keys, and **immediately replaces the transport key** so the lock is now
-  bound to *your* admin key.
-- After that, re-commissioning requires **your admin key**, or a **physical
-  reset** (internal reset pads, only reachable with the cylinder removed — see `lifecycle-and-security.md` §2.6) that wipes to factory. A reset
-  returns the lock to blank — it **opens nothing** until re-commissioned. Reset
-  is denial, never entry.
+A blank lock must accept its first owner, and the site keys it receives must
+be readable by **that lock only**. So (details: [`spec/admin-card.md`](../spec/admin-card.md) §5):
+- Every lock has its own **device key pair**, created once by the lock
+  itself. The private key never leaves the lock; the **public key is not
+  secret** and is engraved as a QR code on the electronics module.
+- The commissioning card carries the site keys **encrypted to that lock's
+  public key** and **signed** by the site. A stolen commissioning card is
+  useless; on any other lock it does nothing.
+- Once OWNED, the lock only changes owner via a **signed, targeted
+  decommission** from its site, or a **physical reset** (internal reset pads,
+  only reachable with the cylinder removed — see `lifecycle-and-security.md`
+  §2.6). A reset returns the lock to blank — it **opens nothing** until
+  re-commissioned. Reset is denial, never entry.
+- Anyone may commission a lock that *is* blank — by design (lost keys,
+  second-hand locks). What protects a lock is that getting it back to blank
+  needs the owner's signature or the door open and the cylinder removed.
 
-If you ever buy pre-made secure elements, the transport key is what you change
-on first use — treat it like a default password.
+In the picture: each lock has its own mailbox. Anyone can drop a letter in,
+only the lock can open it. The commissioning card is a sealed letter for one
+mailbox; the decommission card is a note signed by the owner saying "forget
+me".
 
 ## Commission a new cylinder (blank -> owned)
-1. In your tool, define the door: assign a unique **door ID** and the
+1. Scan the lock's **QR code** (device ID + public key) — or tap an
+   **identify card** if there is no QR.
+2. In your tool, define the door: assign a unique **door ID** and the
    **zones** it belongs to.
-2. Tap the **admin card** (or connect the encoder) to the blank cylinder.
-3. The tool, over that channel, writes into the cylinder's secure element:
-   - your **site read key** (so it can authenticate your user cards —
-     never the issuer key, which stays in the encoder),
-   - your **admin key** (so only you can manage it henceforth),
-   - the **door ID** and its **zone memberships**,
-   - the current **time** (RTC).
-4. The transport key is overwritten; the lock is now OWNED.
-5. Verify: tap an authorised user card -> it opens. Cross-check with your
-   Proxmark that the on-card app authenticates.
+3. The tool writes a **commissioning card** for exactly this lock: site read
+   key, UID key, admin read key, the site's signature public key, door ID,
+   zones — encrypted to the lock, signed by the site. (Never the issuer key,
+   which stays in the encoder.)
+4. Tap it on the blank cylinder: the lock decrypts, checks the signature,
+   stores everything → OWNED. It takes its time from the bundle.
+5. Verify: tap an authorised user card -> it opens.
+
+## Lock without paperwork
+Tap an **identify card**: the lock writes its device ID, public key, state
+and door onto it. Then decommission / re-commission, or just reassign door
+and zones with a targeted maintenance bundle (no decommission needed).
 
 ## Fit a new lock into an existing card population
 Because this is data-on-card (your own format, [`spec/card-format.md`](../spec/card-format.md)):

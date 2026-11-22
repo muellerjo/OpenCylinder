@@ -75,10 +75,11 @@ CryptoCell and by STM32 crypto hardware.
 On an admin card the bundle is additionally protected by the admin
 application's DESFire authentication and encrypted read (defence in depth).
 
-**Bootstrap:** a blank lock has no public key yet. A commissioning bundle's
-record `0x30` is encrypted and MAC'd under the lock's transport key (§5) and
-contains the site's public key; the lock decrypts it, then verifies the bundle
-signature with the key it just received, and only then stores anything.
+**Bootstrap:** a blank lock does not know the site's public key yet. A
+commissioning bundle's record `0x30` is encrypted to the lock's own device
+public key (§5.3) and contains the site's public key; the lock decrypts it,
+then verifies the bundle signature with the key it just received, and only
+then stores anything.
 
 #### TLV payload
 
@@ -91,8 +92,9 @@ signature with the key it just received, and only then stores anything.
 | `0x12` | blacklist replace | full list (as 0x10) — replaces the lock's list |
 | `0x20` | time profiles | n × 10-byte profile ([`time-profiles.md`](time-profiles.md)) — replaces the table |
 | `0x21` | time-zone rule | POSIX TZ string, ≤ 47 bytes |
-| `0x30` | commissioning block | §5 — encrypted for the target lock; includes the site management public key |
-| `0x31` | lock assignment | door ID (u16), zone count (u8), zone IDs (u16 each) — for one target lock, §5 |
+| `0x30` | commissioning block | §5.3 — ECIES-encrypted for the target lock; includes the site management public key |
+| `0x31` | lock assignment | door ID (u16), zone count (u8), zone IDs (u16 each) — targeted bundles only, §5.3/§5.4 |
+| `0x40` | decommission | no value — targeted bundles only, §5.4 |
 
 ## 3. Time sync
 
@@ -115,39 +117,154 @@ monotonic bundle **sequence number**; the lock stores the last one it applied
 (NVS) and applies blacklist / profile / TZ records only if `sequence > last`. Time
 sync still follows the rollback rule independently.
 
-## 5. Commissioning (bootstrap) — the critical part
+## 5. Lock identity, commissioning and decommissioning
 
-A blank lock must accept its **first** owner and nobody else. The
-commissioning block carries the lock's site configuration: site AID, site read
-key (master, for diversification), admin AID, admin read key (master), UID key,
-plus the lock assignment (record 0x31).
+### 5.1 Lock states
 
-These keys must not be readable by anyone who merely holds the admin card.
-Proposal:
+| State | Meaning | Accepts |
+|---|---|---|
+| **FACTORY** | blank, belongs to nobody — **opens nothing** | commissioning bundle for *this* device; identify card |
+| **OWNED** | belongs to one site | user cards of that site; signed bundles of that site; identify card |
 
-- Every lock ships with a **lock-unique transport key** (random per device,
-  printed as QR code / label inside the housing, never shared between locks).
-- The encoder encrypts the commissioning block **for that lock**:
-  AES-CBC + CMAC under keys derived from the lock's transport key, bound to the
-  lock's device ID (so a block for lock A is useless on lock B).
-- The blank lock decrypts it, stores the keys in secure storage, **erases its
-  transport key**, and from then on accepts only admin cards of that site
-  (state OWNED).
-- Re-commissioning an owned lock needs a valid admin card of the owning site
-  with action *decommission*, or the physical reset (§2.6 of the security
-  doc).
+```
+FACTORY ──commission──▶ OWNED ──decommission (signed)──▶ FACTORY
+                          │
+                          └──hard reset (internal pads, cylinder removed)──▶ FACTORY
+```
 
-**Decision: lock-unique transport key.** One shared default key is ruled
-out: the firmware is open source, so a shared key would be public and a
-stolen commissioning card would expose all site keys. The flash tool
-generates the key per device and prints it as a QR label for the inside of
-the housing; the encoder scans it.
+Both transitions back to FACTORY wipe all **site** data (site keys, admin
+keys, signature public key, door ID, zones, blacklist, profiles, TZ, last
+sequence). The event log is kept. The lock's **device key pair is never
+wiped** (§5.2).
 
-**Decision: one admin card per lock for commissioning.** A commissioning
-card carries exactly one commissioning block (0x30) and one lock assignment
-(0x31) for one target device; the encoder rewrites the card for the next
-lock. Maintenance actions (time, blacklist, profiles, TZ) are not bound to a
-device: one maintenance admin card serves all locks of the site.
+### 5.2 Device key pair (the lock's identity)
+
+**Decision (2026-11-23, replaces the earlier per-lock transport key):** every
+lock has its own **ECDH P-256 key pair**.
+
+- Generated **once**, by the lock itself, on its very first boot; the private
+  key **never leaves the lock** (production: secure element / MCU key
+  storage, not exportable).
+- **Permanent:** not changed by hard reset, decommissioning or firmware
+  updates. (Dev board: kept in NVS — a full `erase_flash` would lose it; the
+  identify card, §5.5, catches that.)
+- The **public key is not secret**: it is printed / engraved as a QR code on
+  the **electronics module** (not on the mechanical cylinder), so key and QR
+  always travel together. A replaced board brings its own QR.
+- **Device ID:** 8 bytes; on the ESP32 dev board `00 00` + the 6-byte MAC.
+
+Why not a secret transport key: a secret label must be protected and
+destroyed, and whoever reads it can decrypt the commissioning data. With a
+key pair the label holds nothing secret.
+
+**QR content** (alphanumeric mode, uppercase hex):
+
+```
+OC1:<device ID, 16 hex>:<public key, compressed, 66 hex>
+OC1:0000AC276EFB0250:03A1B2…   (≈ 88 characters, QR version 4, ~ 15–20 mm engraved)
+```
+
+### 5.3 Commissioning (FACTORY → OWNED)
+
+**Decision: one commissioning card per lock.** The encoder:
+
+1. gets the lock's device ID + public key (QR, site database §5.6, or
+   identify card §5.5);
+2. builds a **commissioning bundle**: `target_device` = that device ID,
+   records `0x30` (commissioning block) and `0x31` (lock assignment: door ID,
+   zones);
+3. encrypts the commissioning block **to the lock's public key** (ECIES,
+   below) and **signs** the bundle with the site management key;
+4. writes it onto an admin card; the admin taps it on the lock.
+
+The lock (only in FACTORY):
+
+1. checks `target_device` == own device ID;
+2. decrypts record `0x30` with its **private key** — fails on every other lock;
+3. verifies the bundle signature with the site management public key **from
+   the decrypted block** (binds the bundle to the site that owns that key);
+4. stores everything, records the bundle sequence → **OWNED**, logs it.
+
+A stolen commissioning card is useless: its keys are readable only by the
+target lock. An OWNED lock ignores commissioning bundles.
+
+**Record `0x30` — commissioning block (ECIES):**
+
+| Field | Bytes | |
+|---|---:|---|
+| ephemeral public key | 33 | P-256, compressed, fresh per commissioning |
+| nonce | 12 | random |
+| ciphertext | n | AES-128-GCM of the plaintext below |
+| tag | 16 | GCM authentication tag |
+
+Key: ECDH(ephemeral private, lock public) → shared x-coordinate (32 bytes) →
+HKDF-SHA256(salt = device ID, info = `"OpenCylinder commissioning v1"`) →
+16-byte AES key. Additional authenticated data: the bundle header (27 bytes).
+
+Plaintext:
+
+| Field | Bytes |
+|---|---:|
+| site AID (wire order) | 3 |
+| admin AID (wire order) | 3 |
+| site read master key | 16 |
+| UID key | 16 |
+| admin read master key | 16 |
+| site management public key (compressed) | 33 |
+
+**Record `0x31` — lock assignment:** door ID (u16), zone count (u8),
+zone IDs (u16 each, ≤ 16). Only valid in a bundle with `target_device` = this
+lock.
+
+### 5.4 Reassignment and decommissioning (OWNED)
+
+- **New door / zones, same owner:** a signed maintenance bundle targeted at
+  this lock with record `0x31` — the lock stays OWNED, no new keys needed.
+- **Decommission** (owner or keys change): a signed bundle targeted at this
+  lock (`target_device` must not be zero) with record **`0x40`
+  decommission** (no value), sequence newer than the last applied → the lock
+  wipes its site data → FACTORY. An old decommission card is refused by the
+  sequence rule.
+- **Site keys lost:** hard reset via the internal pads
+  (`docs/lifecycle-and-security.md` §2.6) → FACTORY, then commission again.
+
+### 5.5 Identify card
+
+A DESFire card with the **identify application** (AID `4F4349`) holding one
+StandardDataFile (file 0, 64 bytes, communication mode plain, **free** read
+and write access). Tapped on any lock in any state, the lock **writes** its
+public identity into it — nothing secret, and the lock never takes
+instructions from this card:
+
+| Field | Bytes | |
+|---|---:|---|
+| format | 1 | `1` |
+| state | 1 | `0` FACTORY, `1` OWNED |
+| device ID | 8 | |
+| device public key (compressed) | 33 | |
+| firmware version | 3 | major, minor, patch |
+| site AID | 3 | zero in FACTORY |
+| door ID | 2 | zero in FACTORY |
+| reserved | 13 | zero |
+
+Uses: find out what a lock is without paperwork; cross-check the engraved QR
+against the key the lock really holds (guards against a swapped label: the
+encoder warns if they differ).
+
+### 5.6 Site database (encoder)
+
+The encoder keeps, per lock: device ID, device public key, door ID, zones,
+commissioning date, last bundle sequence. Filled automatically at
+commissioning; the QR and the identify card are only needed when this is
+missing.
+
+### 5.7 Recovering a lock without paperwork
+
+| Situation | Steps |
+|---|---|
+| own lock, site keys available | identify card → (decommission → commission) or just reassignment |
+| own lock, site keys lost | hard reset → identify card → commission |
+| second-hand / unknown owner | hard reset → identify card → commission |
 
 ## 6. Logging back to the card
 
@@ -167,7 +284,7 @@ read file 1: management bundle
 verify the bundle (same path for every carrier):
   site_aid == this site?  target_device == 0 or this lock?
   signature valid with the site management public key?   else ignore
-  (blank lock: decrypt record 0x30 with the transport key first, §5)
+  (FACTORY lock: decrypt record 0x30 with the device private key first, §5.3)
 apply in this order:
   1. time        (rollback rule, §3)
   2. sequence    (stop applying 3–4 if not newer, §4)

@@ -13,6 +13,7 @@
 
 #include <Arduino.h>
 #include <Wire.h>
+#include <bootloader_random.h>
 
 #include <M5UnitUnified.h>
 #include <M5UnitUnifiedNFC.h>
@@ -28,6 +29,7 @@
 #include "management.h"
 #include "platform/esp32/esp32_clock.h"
 #include "platform/esp32/gpio_actuator.h"
+#include "platform/esp32/device_identity.h"
 #include "platform/esp32/managed_store.h"
 #include "platform/esp32/nvs_event_store.h"
 #include "platform/esp32/rgb_status_led.h"
@@ -115,6 +117,18 @@ Esp32Clock lockClock;
 GpioActuator actuator{OC_ACTUATOR_PIN};
 RgbStatusLed led{OC_LED_R, OC_LED_G, OC_LED_B, OC_LED_ACTIVE_HIGH != 0};
 NvsEventStore eventStore;
+DeviceIdentity identity;
+
+// Lock state — spec/admin-card.md §5.1. FACTORY opens nothing.
+enum class LockState : uint8_t { Factory = 0, Owned = 1 };
+LockState lockState = LockState::Factory;
+Preferences statePrefs;
+
+void setLockState(LockState s) {
+  lockState = s;
+  statePrefs.putUChar("state", static_cast<uint8_t>(s));
+}
+const char* lockStateName() { return lockState == LockState::Owned ? "OWNED" : "FACTORY"; }
 EventLog eventLog{eventStore, 64};
 uint32_t tapCredential = 0;   // credential of the card being evaluated (0 = not read yet)
 
@@ -151,6 +165,7 @@ const char* denyReason(uint8_t code) {
     case deny_code::kUnreadable:     return "card not readable";
     case deny_code::kCardError:      return "card error";
     case deny_code::kUidUnsupported: return "UID not supported";
+    case deny_code::kNotCommissioned: return "lock not commissioned";
     case deny_code::kOther:          return "other";
     default:
       return code < 16 ? toString(static_cast<Decision>(code)) : "?";
@@ -189,7 +204,9 @@ void printEvent(const Event& e) {
       Serial.printf("reset reason %u\n", e.code);
       break;
     case EventType::Bench:
-      Serial.printf("%s\n", e.code == 1 ? "time reset-hwm" : e.code == 2 ? "mgmt reset" : "log clear");
+      Serial.printf("%s\n", e.code == 1 ? "time reset-hwm" : e.code == 2 ? "mgmt reset"
+                           : e.code == 3 ? "log clear" : e.code == 4 ? "state -> FACTORY"
+                                                                     : "state -> OWNED (dev site)");
       break;
   }
 }
@@ -198,7 +215,23 @@ void printEvent(const Event& e) {
 void handleCommand(const std::string& line) {
   if (line == "help") {
     Serial.println("commands: time | time <unix-utc-seconds> | time reset-hwm |"
-                   " mgmt | mgmt reset | log | log clear | uidmode [auto|key2] | help");
+                   " mgmt | mgmt reset | log | log clear | id | state factory|owned |"
+                   " uidmode [auto|key2] | help");
+  } else if (line == "id") {
+    char qr[100];
+    identity.qrText(qr, sizeof qr);
+    Serial.printf("id    state %s, %s\n", lockStateName(), qr);
+#if defined(OC_DEV_BUILTIN_SITE)
+  } else if (line == "state factory" || line == "state owned") {
+    // Bench only: simulate decommission / commission with the built-in site.
+    managedStore.clear();
+    setDefaults(managed);
+    parsePosixTz(managed.tzRule.c_str(), siteTz);
+    const bool owned = (line == "state owned");
+    setLockState(owned ? LockState::Owned : LockState::Factory);
+    eventLog.add(EventType::Bench, owned ? 5 : 4, timeOrZero());
+    Serial.printf("state %s (bench; site data reset, device key pair kept)\n", lockStateName());
+#endif
   } else if (line == "log") {
     const std::vector<Event> ev = eventLog.entries();
     Serial.printf("log   %lu events total, showing the last %u\n",
@@ -261,6 +294,14 @@ void handleCommand(const std::string& line) {
 // echo, so echo printable characters and handle Backspace / Delete here.
 void pollSerial() {
   static uint8_t escState = 0;  // 0 = normal, 1 = after ESC, 2 = inside ESC [ ... sequence
+  // While a Linux host (re)opens the port it may briefly echo our own boot
+  // output back to us: ignore everything received in the first 3 s.
+  constexpr uint32_t kIgnoreInputAfterBootMs = 3000;
+  if (millis() < kIgnoreInputAfterBootMs) {
+    while (Serial.available()) Serial.read();
+    serialLine.clear();
+    return;
+  }
   while (Serial.available()) {
     const char c = static_cast<char>(Serial.read());
     // Swallow ANSI escape sequences (arrow keys etc.): ESC [ <params> <final byte>
@@ -415,6 +456,11 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   M5DesfireTransport transport{*dep};
   DesfireAuth card{transport};
 
+  if (lockState == LockState::Factory) {
+    // FACTORY opens nothing; commissioning and identify cards come next.
+    return deny("lock not commissioned (FACTORY)", deny_code::kNotCommissioned);
+  }
+
   // Admin application present? Then this is an admin card (never opens).
   if (card.selectApplication(kAdminAid)) return handleAdminCard(picc, card);
   if (card.lastStatus() == kNoResponse) return retry(card.lastError());
@@ -543,6 +589,10 @@ void handleTap(m5::nfc::a::PICC& picc) {
 void setup() {
   actuator.begin();  // first: make sure the clutch is disengaged
   led.begin();
+  // Offline build = no WiFi/BT, so the hardware RNG needs the SAR-ADC noise
+  // entropy source for true random numbers (key generation, RndA). The ADC is
+  // not used otherwise.
+  bootloader_random_enable();
   Serial.begin(115200);
   delay(1500);  // give USB-CDC time to enumerate so the banner isn't lost
 
@@ -576,6 +626,25 @@ void setup() {
   for (int i = 0; i < 6; ++i) deviceId[2 + i] = static_cast<uint8_t>(mac >> (8 * i));
   Serial.printf("Device ID %02X%02X%02X%02X%02X%02X%02X%02X\n", deviceId[0], deviceId[1],
                 deviceId[2], deviceId[3], deviceId[4], deviceId[5], deviceId[6], deviceId[7]);
+  bool generated = false;
+  if (!identity.begin(deviceId, generated)) {
+    Serial.println("ERROR: device key pair could not be created/loaded");
+    led.show(LedPattern::Error);
+    return;
+  }
+  char qr[100];
+  identity.qrText(qr, sizeof qr);
+  Serial.printf("Device key pair %s; QR: %s\n", generated ? "GENERATED (first boot)" : "loaded", qr);
+
+  statePrefs.begin("oc-state", false);
+#if defined(OC_DEV_BUILTIN_SITE)
+  // Bench: until commissioning exists, a lock without stored state starts
+  // OWNED by the built-in dev test site.
+  lockState = static_cast<LockState>(statePrefs.getUChar("state", static_cast<uint8_t>(LockState::Owned)));
+#else
+  lockState = static_cast<LockState>(statePrefs.getUChar("state", static_cast<uint8_t>(LockState::Factory)));
+#endif
+  Serial.printf("Lock state: %s\n", lockStateName());
   if (!parsePosixTz(managed.tzRule.c_str(), siteTz)) {
     Serial.println("ERROR: invalid site time zone rule");
     led.show(LedPattern::Error);

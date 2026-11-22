@@ -19,7 +19,8 @@ enum class EventType : uint8_t {
   Deny = 3,
   Admin = 4,     // code = BundleStatus, credential = bundle sequence, target = admin_id
   TimeSet = 5,   // code = source (1 serial, 2 admin bundle), credential = new time
-  Bench = 6,     // bench-only actions (code: 1 time reset-hwm, 2 mgmt reset, 3 log clear)
+  Bench = 6,     // bench-only actions (code: 1 time reset-hwm, 2 mgmt reset, 3 log clear,
+                //   4 state -> FACTORY, 5 state -> OWNED (dev site))
 };
 
 // Deny codes 0..15 = opencylinder::Decision values; extra codes from 32 on.
@@ -30,6 +31,7 @@ constexpr uint8_t kAuthFailed = 34;
 constexpr uint8_t kUnreadable = 35;
 constexpr uint8_t kCardError = 36;
 constexpr uint8_t kUidUnsupported = 37;
+constexpr uint8_t kNotCommissioned = 38;
 constexpr uint8_t kOther = 63;
 }  // namespace deny_code
 

@@ -38,6 +38,12 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw: device identity — permanent ECDH P-256 device key pair generated on
+  first boot (NVS), QR text `OC1:<device ID>:<compressed key>` in the banner
+  and via `id`; lock states FACTORY (opens nothing) / OWNED; bench lock
+  starts OWNED with the built-in dev site (`OC_DEV_BUILTIN_SITE`), `state
+  factory|owned` to switch; SAR-ADC entropy source enabled so the RNG is
+  truly random in the radio-less offline build.
 - spec: commissioning redesigned — per-lock ECDH P-256 device key pair
   (permanent, public key as QR on the electronics module) replaces the
   secret transport key; ECIES commissioning record (AES-128-GCM, HKDF);

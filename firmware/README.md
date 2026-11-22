@@ -79,6 +79,15 @@ never opens. Signature check ≈ 350 ms on the ESP32-C3 (software ECC; the
 nRF52 CryptoCell does it in hardware). Write one with
 [`examples/hospital/write_admin_card.py`](../examples/hospital/write_admin_card.py).
 
+**Identity & state** ([`spec/admin-card.md`](../spec/admin-card.md) §5):
+on its first boot the lock generates its permanent ECDH P-256 device key pair
+(NVS on the dev board) and prints its QR text. Because the offline build has
+no WiFi/BT, `setup()` enables the SAR-ADC entropy source
+(`bootloader_random_enable()`), otherwise the ESP32's RNG would only be
+pseudo-random. States: **FACTORY** (opens nothing) and **OWNED**. Until
+commissioning is implemented, the bench lock starts OWNED by the built-in dev
+test site (`OC_DEV_BUILTIN_SITE`).
+
 **Event log:** every boot, opening, refusal (with reason code), admin tap
 and time change is recorded locally — 16-byte records in a ring buffer
 (64 entries in NVS on the dev board; `lib/eventlog`). It contains
@@ -113,6 +122,8 @@ hold the card flat, short blue flash every 2 s = time unknown, fast red blink
 | `time` | UTC + local time, high-water mark |
 | `time <unix-utc-seconds>` | set the time (rollback rule applies) |
 | `time reset-hwm` | forget the high-water mark and the time (bench only) |
+| `id` | lock state and identity QR text `OC1:<device ID>:<public key>` |
+| `state factory` / `state owned` | bench only (`OC_DEV_BUILTIN_SITE`): simulate decommission / commission with the built-in dev site; site data reset, device key pair kept |
 | `log` / `log clear` | local event log (last 64 events: boot, open, deny + reason, admin, time set) / clear it (bench only) |
 | `mgmt` / `mgmt reset` | show the managed configuration (bundle sequence, blacklist, profiles, TZ) / back to factory defaults (bench only) |
 | `uidmode key2` / `uidmode auto` | force the random-UID path (key 2 + `GetCardUID`) on fixed-UID cards / back to normal |

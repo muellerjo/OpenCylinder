@@ -13,5 +13,19 @@ carries a board revision (`rev A`, `rev B`, …) on the silkscreen
 - NFC frontend: ST25R3916 (M5Stack Unit NFC, I2C over Grove)
 - Production MCU (later): nRF52 (radio off) or STM32L5/U5
 
+## Antenna & RF — first bench observation (2026-11-23)
+
+DESFire needs noticeably more power during AES computation than during
+select. On the bench (M5Stack Unit NFC, ST25R3916, DESFire EV1 card) a card
+held at a deliberately bad angle answers *select* but browns out during
+authentication (no response, card resets). Flat placement works reliably
+(~53 ms for select + auth + 2 encrypted reads); the firmware retries
+communication failures.
+
+Consequences for the production antenna (small coil in the knob): field
+strength, coil size, matching/tuning in the final housing, ferrite behind the
+coil against metal, and a range test with cards **and** key fobs (smaller
+antennas) are first-class design parameters.
+
 Large binary files (STEP, STL, renders, photos) are stored with Git LFS —
 see `../.gitattributes`.

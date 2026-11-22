@@ -104,8 +104,10 @@ swaps transport and crypto backends, not the logic.
 - **Phase 1 — bring-up: ✅ done.** Card detection, native DESFire over ISO-DEP,
   AES authentication against a real DESFire EV1 — all cross-checked with a
   Proxmark3.
-- **Phase 2 — decision logic:** access record, door mask, validity, blacklist;
-  actuator + fail-safe.
+- **Phase 2 — decision logic: ✅ bench done.** Encrypted read of the card
+  record, door/zone access list, expiry, time-unknown rule, blacklist —
+  the XIAO plays a door of the [example hospital](examples/hospital/).
+  Still open: time profiles, actuator + fail-safe.
 - **Phase 3 — tools:** card personalisation and lock commissioning.
 - **Phase 4 — hardening:** hardware key storage, battery + low power, clutch
   prototype, enclosure.

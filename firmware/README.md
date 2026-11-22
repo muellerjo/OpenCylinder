@@ -5,17 +5,17 @@ at boot — see `../docs/versioning.md`).
 
 ## Targets
 
-| Env            | Board                    | I2C to ST25R3916 unit |
-|----------------|--------------------------|-----------------------|
-| `c3-supermini` | ESP32-C3 SuperMini       | SDA GPIO6, SCL GPIO7  |
-| `xiao-c3`      | Seeed Studio XIAO ESP32C3 | SDA D4 (GPIO6), SCL D5 (GPIO7) |
+| Env             | Board                     | I2C to ST25R3916 unit |
+|-----------------|---------------------------|-----------------------|
+| `c3-supermini`  | ESP32-C3 SuperMini        | SDA GPIO6, SCL GPIO7  |
+| `xiao-c3`       | Seeed Studio XIAO ESP32C3 | SDA D4 (GPIO6), SCL D5 (GPIO7) |
+| `xiao-c3-debug` | as `xiao-c3`, plus M5 NFC library error/warning logs (ISO-DEP timeouts etc.) | |
 
 ST25R3916 unit (M5Stack Unit NFC, Grove): black → GND, red → 5V,
 yellow → SDA, white → SCL.
 
 ```
-pio run -e c3-supermini -t upload -t monitor
-pio run -e xiao-c3      -t upload -t monitor
+pio run -e xiao-c3 -t upload -t monitor
 ```
 
 The ESP32-C3 boards are for development only. The battery-powered device moves
@@ -24,36 +24,56 @@ port swaps the transport and crypto backends, not the logic.
 
 ## Layout
 
-- `lib/desfire_auth/` — portable DESFire AES auth (mbedTLS), no hardware deps.
-- `include/version.h` — build version macros, supported card format version.
-- `scripts/version.py` — pre-build version stamping.
-- `src/main.cpp` — dev skeleton (boot banner, I2C init).
-
+- `lib/desfire_auth/` — portable DESFire EV1 session: select, AES
+  authentication, encrypted `ReadData` (EV1 secure messaging: CMAC-chained IV,
+  CRC32), crypto self-test (RFC 4493 vectors). mbedTLS only.
+- `lib/access_decision/` — portable card record parsing and the lock decision
+  per `spec/card-format.md`; mirrors `examples/hospital/check_access.py`.
+  Also `IClock` and a Y2038-safe UTC date helper.
 - `src/platform/esp32/` — `M5DesfireTransport` (`IDesfireTransport` on the
-  M5Unit-NFC ISO-DEP layer, native DESFire frames).
+  M5Unit-NFC ISO-DEP layer, native DESFire frames), `Esp32Clock`.
+- `src/main.cpp` — Phase 2 bench lock.
+- `include/version.h`, `scripts/version.py` — build version stamping.
+- `test/host/` — host tests (plain g++, no hardware):
+  ```
+  cd test/host && g++ -std=c++11 -Wall -Wextra -I../../lib/access_decision/src \
+    test_access_decision.cpp ../../lib/access_decision/src/*.cpp -o t && ./t
+  ```
 
-## Phase 1 bring-up ✅ (verified 2026-11-22)
+## Phase 2 bench lock ✅ (verified 2026-11-23)
 
-On every DESFire card tap the firmware prints:
+The XIAO plays **door 4 "Ward 1 – ward door" (zones 3, 4)** of the fictional
+hospital in [`examples/hospital/`](../examples/hospital/). On every tap:
 
-1. UID / type / ATQA / SAK — compare with Proxmark3 `hf 14a info`.
-2. `GetVersion` (HW / SW / UID / batch / production date) — compare with the
-   `raw` lines of `hf mfdes info`.
-3. AES authentication on application `F51001`, key 0 — tries the zero key,
-   then the dev test key `00112233445566778899AABBCCDDEEFF`.
+1. select site application `4F4331`, AES authentication with the site read key
+   (key 1, public dev test key, not diversified yet);
+2. encrypted read of file 0 (header) and file 1 (access list);
+3. decision → `OPEN via zone 4 (53 ms)` or `DENY  <reason>`.
 
-**Prepare a test card** (Proxmark3, factory-default card master key —
-`hf mfdes formatpicc` wipes all applications first if needed):
+Communication failures (the card browns out during the AES computation when
+it sits at a bad angle or is still moving into the field) are retried up to
+3 times; real refusals are final at once.
 
-```
-hf mfdes createapp --aid F51001 --dstalgo aes --numkeys 1
-hf mfdes auth --aid F51001 -n 0 -t aes -k 00000000000000000000000000000000
-hf mfdes changekey --aid F51001 -t aes -k 00000000000000000000000000000000 \
-  --newkey 00112233445566778899AABBCCDDEEFF --newver 01
-hf mfdes auth --aid F51001 -n 0 -t aes -k 00112233445566778899AABBCCDDEEFF
-```
+**Serial commands** (dev only — production gets the time from admin cards):
+`time`, `time <unix-utc-seconds>`, `help`. After a reset the time is unknown.
 
-Expected after the key change: `zero key : failed`, `dev test key : OK`.
+**Test cards:** write any example user onto a DESFire dev card with
+[`examples/hospital/write_test_card.py`](../examples/hospital/write_test_card.py).
 
-The dev test key is public and for bench testing only — real site keys never
-appear in source code or in this repository.
+| Card | Expected |
+|---|---|
+| Sara (2001), ward 1 | `OPEN via zone 4` |
+| Max (2002), ward 2 | `DENY no matching door/zone entry` |
+| Eva (2003), blacklisted | `DENY credential blacklisted` |
+| Ben (4002), time unknown | `DENY time unknown and card has an expiry` |
+| Ben (4002), after `time 1795510800` | `DENY card expired` |
+| Olga (4001), cleaning shift | `DENY right exists, but not at this time` (time profiles not implemented yet → fail closed) |
+
+## Phase 1 bring-up ✅ (2026-11-22)
+
+Card detection (UID / ATQA / SAK vs. Proxmark3 `hf 14a info`), native DESFire
+over ISO-DEP (`GetVersion` vs. `hf mfdes info`), AES authentication vs.
+`hf mfdes auth` — see git history (`10a087c`, `3044e42`).
+
+The dev test keys are public and for bench testing only — real site keys
+never appear in source code or in this repository.

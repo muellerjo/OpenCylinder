@@ -25,33 +25,57 @@ class IDesfireTransport {
                           DesfireResponse& out) = 0;
 };
 
-// AES-128 authentication (DESFire native command 0xAA) against one key of the
-// currently selected application. On success derives the 16-byte session key.
+// DESFire EV1 session: application select, AES authentication (0xAA) and
+// EV1 AES secure messaging for encrypted reads.
 //
 // SECURITY NOTES — read before trusting this in production:
-//  * Follows the common DESFire EV1 AES convention; the CBC/IV chaining is the
-//    part to validate against a known-good reference. Use the Proxmark3
-//    `hf mfdes auth` as the oracle on a real card.
+//  * Verified on a real DESFire EV1 against Proxmark3 `hf mfdes`.
 //  * `key` must never originate from plain flash. Production targets keep it
 //    in hardware key storage (nRF52 CryptoCell/KMU, STM32 secure storage, or an
 //    ATECC608A); on the ESP32 dev boards at minimum use flash encryption +
 //    secure boot. Until then this is a prototype, not secure.
+//  * The session key and IV live only inside this object and are wiped on
+//    reset, on any error and on destruction.
 class DesfireAuth {
  public:
   explicit DesfireAuth(IDesfireTransport& transport) : t_(transport) {}
+  ~DesfireAuth();
+  DesfireAuth(const DesfireAuth&) = delete;
+  DesfireAuth& operator=(const DesfireAuth&) = delete;
 
   // Select an application by its 3-byte AID, given LSB-first (wire order),
-  // e.g. AID 0x4F4331 -> {0x31, 0x43, 0x4F}.
+  // e.g. AID 0x4F4331 -> {0x31, 0x43, 0x4F}. Drops any session.
   bool selectApplication(const uint8_t aid[3]);
 
-  // Authenticate with AES `key` (16 bytes) as key number `keyNo`.
-  // Writes the 16-byte session key on success; on failure `sessionKey` is
-  // left zeroed.
-  bool authenticateAes(uint8_t keyNo, const uint8_t key[16],
-                       uint8_t sessionKey[16]);
+  // Authenticate with AES `key` (16 bytes) as key number `keyNo` of the
+  // selected application. On success a session is established (IV = 0).
+  bool authenticateAes(uint8_t keyNo, const uint8_t key[16]);
+
+  bool authenticated() const { return authenticated_; }
+
+  // Diagnostics for the last failed call: where it failed and the card's
+  // status byte (0xFF = no response / transport error). Never secret.
+  const char* lastError() const { return lastError_; }
+  uint8_t lastStatus() const { return lastStatus_; }
+
+  // ReadData (0xBD) of a StandardDataFile in communication mode "full"
+  // (encrypted, CRC32-protected). Needs a preceding authenticateAes with a
+  // key that has read rights. `length` 1..kMaxReadLength bytes from `offset`.
+  // Fails (and drops the session) on any protocol, padding or CRC error.
+  static constexpr uint32_t kMaxReadLength = 256;
+  bool readDataEncrypted(uint8_t fileNo, uint32_t offset, uint32_t length,
+                         std::vector<uint8_t>& out);
 
  private:
+  void resetSession();
+  bool fail(const char* where, uint8_t status = 0xFF);
+
   IDesfireTransport& t_;
+  bool authenticated_ = false;
+  uint8_t sessionKey_[16] = {0};
+  uint8_t iv_[16] = {0};
+  const char* lastError_ = "";
+  uint8_t lastStatus_ = 0xFF;
 };
 
 }  // namespace opencylinder

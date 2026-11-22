@@ -18,6 +18,14 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
 - fw: phase 1 bring-up on XIAO ESP32C3 + ST25R3916 (M5Unit-NFC 0.1.2):
   card detection, `M5DesfireTransport` (native DESFire over ISO-DEP),
   `GetVersion`, AES auth on application `F51001`.
+- fw: phase 2 bench lock (door 4 of the example hospital): site app
+  `4F4331`, AES auth with the read key, encrypted `ReadData` (EV1 secure
+  messaging, CMAC-chained IV, CRC32), card format v1 decision
+  (`access_decision` lib), `IClock` + serial `time` command, retry on
+  communication failures; boot self-test of AES-CMAC (RFC 4493) and CRC32.
+  Verified on a DESFire EV1 for Sara/Ben/Olga cases; host tests for the
+  decision logic. Debug env `xiao-c3-debug` with NFC library logs.
+- hw: first RF observation (brownout during AES at bad card angles).
 - docs: README comparison with OSS Standard Offline (incl. key management
   and multi-site cards).
 - spec: card format version 1 — 16-byte header (`format_version` first,

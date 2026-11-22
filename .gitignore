@@ -221,3 +221,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# PlatformIO
+.pio/
+
+# KiCad backups / local state
+*-backups/
+*.kicad_prl
+fp-info-cache
+
+# Firmware libraries (overrides the Python "lib/" rule above)
+!firmware/lib/

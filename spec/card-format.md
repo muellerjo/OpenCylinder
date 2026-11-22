@@ -24,12 +24,17 @@ All multi-byte integers are **little-endian** (the DESFire wire convention).
 | Offset | Bytes | Field            | Notes |
 |-------:|------:|------------------|-------|
 | 0      | 4     | `credential_id`  | unique per card; what is logged / blacklisted |
-| 4      | 4     | `valid_until`    | unix time (UTC, seconds); `0` = no expiry |
+| 4      | 4     | `valid_until`    | **unsigned** unix time (UTC, seconds) — valid until 2106-02-07; `0` = no expiry |
 | 8      | 2     | `door_mask`      | bitmask of the doors this card may open |
 | 10     | 1     | `format_version` | layout version of this record; currently `1` |
 | 11     | 5     | reserved         | must be zero in format 1 |
 
 Total: 16 bytes = one AES block, convenient for encrypted reads later.
+
+**No year-2038 problem:** `valid_until` is interpreted as *unsigned* 32-bit,
+so it runs until 2106. Implementations must not pass it through a signed
+32-bit `time_t` (as on some embedded C libraries, e.g. the Arduino ESP32-C3
+build) — keep it as `uint32_t` end to end.
 
 `format_version = 0` is deliberately invalid: a card written before this field
 existed (reserved bytes all zero) or a half-personalised card is rejected.
@@ -41,6 +46,7 @@ select application F51001
 if not authenticateAes(key 0, SITE_KEY):        reject   # wrong/cloned card -> stop
 read file 0
 if format_version != SUPPORTED_FORMAT_VERSION:  reject   # unknown layout: never guess
+if valid_until != 0 and time_unknown:           reject   # can't check expiry: fail safe
 if valid_until != 0 and now > valid_until:      reject   # expired
 if (door_mask & THIS_DOOR_BIT) == 0:            reject   # not authorised here
 if credential_id in local_blacklist:            reject   # revoked

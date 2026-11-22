@@ -54,7 +54,8 @@ of an owned lock needs the admin key or a protected physical reset (§2.6).
 card tap -> LPCD wakes MCU -> field on -> select app
          -> AES mutual auth        (proves card holds site key; no UID cloning)
          -> read {credential_id, valid_until, door_mask}
-         -> valid_until >= RTC ?            else reject
+         -> valid_until == 0, or (time known and valid_until >= RTC) ?
+                                            else reject   (see §2.5)
          -> door_mask has THIS door bit ?   else reject
          -> credential_id NOT in blacklist? else reject
          -> engage clutch; user turns knob; log event locally; sleep
@@ -73,6 +74,33 @@ not yet blacklisted dies on its own.
 The admin card carries current time; every admin tap sets the lock's RTC.
 Offline clocks drift — syncing on admin visits is how validity/expiry stays
 correct without a network.
+
+Time rules:
+
+1. **UTC only** — Unix time in seconds, never local time (no DST/time-zone
+   errors in the lock). Stored and compared as **unsigned 32-bit**
+   (`uint32_t`, valid until 2106) — never via a signed 32-bit `time_t` or the
+   C library time functions, which overflow in 2038 on some embedded targets.
+2. **Only authenticated admin cards set the clock.** (Dev boards additionally
+   accept a serial `time` command; production firmware does not.)
+3. **No rollback.** The lock keeps a *high-water mark* in non-volatile storage:
+   the latest time it has ever accepted. A new time earlier than the mark
+   (beyond a few minutes' tolerance) is rejected — otherwise an old admin card
+   could turn the clock back and revive expired cards.
+4. **Time unknown** (e.g. battery changed without RTC backup, or never set):
+   - cards **with** an expiry (`valid_until != 0`) are **rejected**;
+   - cards **without** expiry (`valid_until == 0`) are still accepted
+     (door mask + blacklist checks apply as usual);
+   - the next admin tap sets the time and normal operation resumes.
+   This fails safe for time-limited cards while keeping permanent cards
+   (owner, admin) working — so a battery change never locks the owner out.
+   Consequence: permanent cards are the ones to keep few and guard well.
+5. **Drift budget:** day-granularity expiry tolerates minutes of drift; an RTC
+   of ±20 ppm (≈ 1 min/month) synced on admin visits is sufficient.
+
+Hardware (decided with the production PCB): MCU-internal RTC with a
+32.768 kHz crystal, or an external low-power RTC (e.g. RV-3028-C7, ~45 nA),
+ideally with backup so a battery change keeps the time.
 
 ### 2.6 Decommission / reset
 - **Soft (with admin key):** admin card decommissions the lock — wipes config,

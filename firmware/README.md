@@ -68,6 +68,13 @@ more than 5 minutes earlier than it.
 330 Ω resistor to GND, or a 3.3 V relay module. Forced low at boot
 (disengaged by default).
 
+**Status LED:** plain RGB LED (common cathode), D1 = red, D3 = green,
+D10 = blue, one 330 Ω resistor per colour, common leg to GND. Green = open
+(while the clutch is engaged), red = denied, yellow = retrying / blinking =
+hold the card flat, short blue flash every 2 s = time unknown, fast red blink
+= hardware or self-test error, off = idle. Pins and polarity are set in
+`platformio.ini` (`OC_LED_*`).
+
 **Serial commands** (dev only — production gets these from admin cards):
 
 | Command | |

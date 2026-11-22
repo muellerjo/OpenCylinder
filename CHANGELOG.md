@@ -34,6 +34,8 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
 - fw: random-UID support — key 2 + encrypted GetCardUID, testable on
   fixed-UID cards via `uidmode key2`.
 - fw: bench actuator (GPIO, disengaged by default, 3 s window, hard limit).
+- fw: RGB status LED (plain RGB, no standby current; open/deny/retry/
+  time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
 - fw + examples: per-card keys — read/issuer keys diversified with NXP

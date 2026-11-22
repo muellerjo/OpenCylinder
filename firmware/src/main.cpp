@@ -26,6 +26,7 @@
 #include "desfire_crypto.h"
 #include "platform/esp32/esp32_clock.h"
 #include "platform/esp32/gpio_actuator.h"
+#include "platform/esp32/rgb_status_led.h"
 #include "platform/esp32/m5_desfire_transport.h"
 #include "version.h"
 
@@ -77,6 +78,7 @@ m5::unit::UnitNFC nfcUnit{};          // ST25R3916 over I2C
 m5::nfc::NFCLayerA nfcA{nfcUnit};     // ISO14443-A layer
 Esp32Clock lockClock;
 GpioActuator actuator{OC_ACTUATOR_PIN};
+RgbStatusLed led{OC_LED_R, OC_LED_G, OC_LED_B, OC_LED_ACTIVE_HIGH != 0};
 constexpr uint32_t kOpenWindowMs = 3000;   // clutch engaged after OPEN
 
 bool readerReady = false;
@@ -169,6 +171,7 @@ const char* retryReason = "";
 
 Outcome deny(const char* reason) {
   Serial.printf("DENY  %s\n", reason);
+  led.show(LedPattern::Deny, 1000);
   return Outcome::Final;
 }
 Outcome retry(const char* reason) {
@@ -273,10 +276,12 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
                     r.matched.targetId, static_cast<unsigned long>(ms));
     }
     actuator.engage(kOpenWindowMs);
+    led.show(LedPattern::Open, kOpenWindowMs);
     Serial.printf("      clutch engaged for %lu ms (pin %d)\n",
                   static_cast<unsigned long>(kOpenWindowMs), OC_ACTUATOR_PIN);
   } else {
     Serial.printf("DENY  %s  (%lu ms)\n", toString(r.decision), static_cast<unsigned long>(ms));
+    led.show(LedPattern::Deny, 1000);
   }
   return Outcome::Final;
 }
@@ -288,16 +293,20 @@ void handleTap(m5::nfc::a::PICC& picc) {
     if (evaluateCard(picc) == Outcome::Final) return;
     if (attempt == kMaxAttempts) break;
     Serial.printf("      retry %d/%d (%s)\n", attempt, kMaxAttempts - 1, retryReason);
+    led.show(LedPattern::Retry);
+    led.poll();
     nfcA.deactivate();
     delay(kRetryDelayMs);
   }
   deny("card not readable - hold it flat on the reader");
+  led.show(LedPattern::Unreadable, 1500);
 }
 
 }  // namespace
 
 void setup() {
   actuator.begin();  // first: make sure the clutch is disengaged
+  led.begin();
   Serial.begin(115200);
   delay(1500);  // give USB-CDC time to enumerate so the banner isn't lost
 
@@ -311,11 +320,13 @@ void setup() {
                 selfTest ? "PASS" : "FAIL");
   if (!selfTest) {
     Serial.println("ERROR: crypto self-test failed — refusing to operate.");
+    led.show(LedPattern::Error);
     return;
   }
 
   if (!parsePosixTz(kSiteTz, siteTz)) {
     Serial.println("ERROR: invalid site time zone rule");
+    led.show(LedPattern::Error);
     return;
   }
   lockClock.begin();
@@ -323,6 +334,7 @@ void setup() {
   if (!readerReady) {
     Serial.println("ERROR: ST25R3916 not found — check wiring "
                    "(yellow=SDA, white=SCL, red=5V, black=GND)");
+    led.show(LedPattern::Error);
     return;
   }
   Serial.println("Time UNKNOWN until set (type: help). Hold a card to the antenna.\n");
@@ -332,6 +344,9 @@ void loop() {
   const bool wasEngaged = actuator.engaged();
   actuator.poll();
   if (wasEngaged && !actuator.engaged()) Serial.println("      clutch released\n");
+  uint32_t nowT;
+  led.setIdle(lockClock.now(nowT) ? LedPattern::Off : LedPattern::TimeUnknown);
+  led.poll();
   pollSerial();
   lockClock.tick();
   if (!readerReady) {

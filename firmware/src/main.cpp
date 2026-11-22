@@ -24,8 +24,10 @@
 #include "clock.h"
 #include "desfire_auth.h"
 #include "desfire_crypto.h"
+#include "management.h"
 #include "platform/esp32/esp32_clock.h"
 #include "platform/esp32/gpio_actuator.h"
+#include "platform/esp32/managed_store.h"
 #include "platform/esp32/rgb_status_led.h"
 #include "platform/esp32/m5_desfire_transport.h"
 #include "version.h"
@@ -55,22 +57,53 @@ constexpr uint8_t kDevUidKey[16] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0x
 // enabling random UID on a card.
 bool forceUidKeyPath = false;
 
-// Door 4 of examples/hospital/site.json, blacklist as in the example.
+// Admin application of the test site (spec/admin-card.md) and its read key
+// master (public dev test key, diversified per card: UID || admin AID).
+constexpr uint8_t kAdminAid[3] = {0x41, 0x43, 0x4F};  // 4F4341, wire order
+constexpr uint8_t kAdminReadKeyNo = 1;
+constexpr uint8_t kDevAdminReadMasterKey[16] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
+                                                0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90};
+// Site management public key (ECDSA P-256) — dev key from
+// examples/hospital/dev_management_key.pem. Production: installed at
+// commissioning.
+constexpr uint8_t kDevManagementPublicKey[65] = {
+    0x04, 0x72, 0x93, 0xC6, 0xEE, 0x31, 0x36, 0x4E, 0xCA, 0x9E, 0xCC, 0xD0, 0x12, 0x95, 0xED,
+    0x55, 0x56, 0x74, 0x33, 0xB0, 0xBE, 0x01, 0x79, 0xB3, 0x3E, 0x4E, 0xCE, 0x14, 0x0B, 0x04,
+    0x45, 0x3D, 0x8C, 0xA3, 0x26, 0x32, 0x9F, 0xB6, 0x6D, 0x75, 0xF6, 0xAD, 0x83, 0x97, 0xC0,
+    0x38, 0xCB, 0xC8, 0xE3, 0x85, 0xF5, 0x22, 0x07, 0x00, 0xAC, 0x49, 0xF6, 0x7A, 0x05, 0xBB,
+    0xBA, 0xAA, 0xC5, 0x79, 0xC1};
+
+// Door 4 of examples/hospital/site.json.
 constexpr uint16_t kDoorId = 4;
 constexpr uint16_t kLockZones[] = {3, 4};
-constexpr uint32_t kBlacklist[] = {2003};
-// Time profiles of examples/hospital/site.json and the site time zone
-// (spec/time-profiles.md). Production: delivered by admin card.
-const TimeProfile kProfiles[] = {
+// Factory defaults of the managed configuration (until the first admin
+// bundle): blacklist, time profiles and time zone as in the example.
+const TimeProfile kDefaultProfiles[] = {
     {1, 0x7F, {{6 * 60, 20 * 60}, {0, 0}}},                          // Day shift, daily
     {2, kMon | kTue | kWed | kThu | kFri | kSat, {{5 * 60, 11 * 60}, {0, 0}}},  // Cleaning
     {3, kMon | kTue | kWed | kThu | kFri, {{7 * 60, 18 * 60}, {0, 0}}},        // Office hours
 };
-const char* const kSiteTz = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Berlin
+const char* const kDefaultTz = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Berlin
+
+ManagedState managed;     // blacklist, profiles, TZ, last bundle sequence (NVS)
+ManagedStore managedStore;
 TzRule siteTz;
-const LockConfig kLock{kDoorId, kLockZones, sizeof kLockZones / sizeof kLockZones[0],
-                       kBlacklist, sizeof kBlacklist / sizeof kBlacklist[0],
-                       kProfiles, sizeof kProfiles / sizeof kProfiles[0], &siteTz};
+uint8_t deviceId[8];      // 00 00 + 6-byte eFuse MAC
+
+void setDefaults(ManagedState& m) {
+  m = ManagedState{};
+  m.blacklist.push_back(BlacklistEntry{2003, 0xFFFFFFFFu});
+  m.profiles.assign(kDefaultProfiles, kDefaultProfiles + sizeof kDefaultProfiles / sizeof kDefaultProfiles[0]);
+  m.tzRule = kDefaultTz;
+}
+
+// The lock's effective configuration for one decision.
+LockConfig currentLock(std::vector<uint32_t>& blacklistStorage, bool timeKnown, uint32_t now) {
+  blacklistStorage = activeBlacklist(managed, timeKnown, now);
+  return LockConfig{kDoorId, kLockZones, sizeof kLockZones / sizeof kLockZones[0],
+                    blacklistStorage.data(), blacklistStorage.size(),
+                    managed.profiles.data(), managed.profiles.size(), &siteTz};
+}
 
 // ------------------------------------------------------------------ hardware
 m5::unit::UnitUnified units;
@@ -103,7 +136,23 @@ void printTime(const char* label, uint32_t t) {
 void handleCommand(const std::string& line) {
   if (line == "help") {
     Serial.println("commands: time | time <unix-utc-seconds> | time reset-hwm |"
-                   " uidmode [auto|key2] | help");
+                   " mgmt | mgmt reset | uidmode [auto|key2] | help");
+  } else if (line == "mgmt") {
+    Serial.printf("mgmt  bundle sequence %lu, TZ %s\n",
+                  static_cast<unsigned long>(managed.lastSequence), managed.tzRule.c_str());
+    for (const BlacklistEntry& e : managed.blacklist) {
+      Serial.printf("      blacklist %lu until %lu\n", static_cast<unsigned long>(e.credentialId),
+                    static_cast<unsigned long>(e.until));
+    }
+    for (const TimeProfile& p : managed.profiles) {
+      Serial.printf("      profile %u days 0x%02X %02u:%02u-%02u:%02u\n", p.id, p.days,
+                    p.iv[0].from / 60, p.iv[0].from % 60, p.iv[0].to / 60, p.iv[0].to % 60);
+    }
+  } else if (line == "mgmt reset") {
+    managedStore.clear();
+    setDefaults(managed);
+    parsePosixTz(managed.tzRule.c_str(), siteTz);
+    Serial.println("mgmt  reset to factory defaults (bench only)");
   } else if (line == "uidmode" || line == "uidmode auto" || line == "uidmode key2") {
     if (line != "uidmode") forceUidKeyPath = (line == "uidmode key2");
     Serial.printf("uidmode %s\n", forceUidKeyPath
@@ -179,6 +228,94 @@ Outcome retry(const char* reason) {
   return Outcome::Retry;
 }
 
+// After a failed card operation: retry only if the card did not answer (RF);
+// if it answered with an error status, refuse at once and say why.
+Outcome cardFailure(DesfireAuth& card, const char* what) {
+  if (card.lastStatus() == kNoResponse) return retry(what);
+  Serial.printf("      [%s: %s, card status %02X]\n", what, card.lastError(), card.lastStatus());
+  return deny(what);
+}
+
+// Read `len` bytes of an encrypted file in chunks (DESFire read <= 256 B).
+bool readChunked(DesfireAuth& card, uint8_t fileNo, uint32_t offset, uint32_t len,
+                 std::vector<uint8_t>& out) {
+  out.clear();
+  while (len) {
+    const uint32_t n = len > DesfireAuth::kMaxReadLength ? DesfireAuth::kMaxReadLength : len;
+    std::vector<uint8_t> part;
+    if (!card.readDataEncrypted(fileNo, offset, n, part)) return false;
+    out.insert(out.end(), part.begin(), part.end());
+    offset += n;
+    len -= n;
+  }
+  return true;
+}
+
+// Admin tap (spec/admin-card.md §7): verify + apply the signed maintenance
+// bundle; admin cards never open the door.
+Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
+  Serial.println("ADMIN admin application found");
+  if (picc.size != 7) return deny("admin card: random/short UID not supported yet");
+  uint8_t divInput[10];
+  memcpy(divInput, picc.uid, 7);
+  memcpy(divInput + 7, kAdminAid, 3);
+  uint8_t key[16];
+  if (!crypto::diversifyAn10922(kDevAdminReadMasterKey, divInput, sizeof divInput, key)) {
+    return deny("admin key diversification failed");
+  }
+  const bool authOk = card.authenticateAes(kAdminReadKeyNo, key);
+  crypto::wipe(key, sizeof key);
+  if (!authOk) {
+    if (card.lastStatus() == kNoResponse) return retry(card.lastError());
+    return deny("admin card: authentication failed");
+  }
+
+  std::vector<uint8_t> hdr, bundle, rest;
+  if (!card.readDataEncrypted(0, 0, 16, hdr)) return cardFailure(card, "admin header read");
+  if (hdr[0] != 1) return deny("admin card: unknown admin format");
+  const uint32_t adminId = hdr[4] | (hdr[5] << 8) | (hdr[6] << 16) | (static_cast<uint32_t>(hdr[7]) << 24);
+  if (!readChunked(card, 1, 0, kBundleHeaderSize, bundle)) return cardFailure(card, "bundle header read");
+  BundleHeader bh;
+  parseBundleHeader(bundle.data(), bundle.size(), bh);
+  const uint32_t total = kBundleHeaderSize + bh.payloadLen + kBundleSignatureSize;
+  if (total > kMaxBundleSize) return deny("admin card: bundle too large");
+  if (!readChunked(card, 1, kBundleHeaderSize, total - kBundleHeaderSize, rest)) {
+    return cardFailure(card, "bundle read");
+  }
+  bundle.insert(bundle.end(), rest.begin(), rest.end());
+
+  uint32_t now = 0;
+  const bool timeKnown = lockClock.now(now);
+  ApplySummary sum;
+  const uint32_t tv0 = millis();
+  const BundleStatus st = applyBundle(bundle.data(), bundle.size(), kSiteAid, deviceId,
+                                      kDevManagementPublicKey, verifyBundleSignature, timeKnown,
+                                      now, managed, sum);
+  Serial.printf("ADMIN admin_id %lu, bundle sequence %lu, %u bytes, signature check %lu ms\n",
+                static_cast<unsigned long>(adminId), static_cast<unsigned long>(bh.sequence),
+                static_cast<unsigned>(bundle.size()), static_cast<unsigned long>(millis() - tv0));
+
+  // Time sync whenever the signature was valid (also for a stale sequence).
+  if (st == BundleStatus::Applied || st == BundleStatus::StaleSequence) {
+    if (lockClock.trySet(sum.issuedAt)) printTime("ADMIN time set to ", sum.issuedAt);
+    else printTime("ADMIN time NOT set (rollback) - high-water mark ", lockClock.highWater());
+  }
+  if (st != BundleStatus::Applied) {
+    Serial.printf("ADMIN bundle not applied: %s\n", toString(st));
+    led.show(st == BundleStatus::StaleSequence ? LedPattern::Admin : LedPattern::Deny, 1500);
+    return Outcome::Final;
+  }
+  parsePosixTz(managed.tzRule.c_str(), siteTz);
+  managedStore.save(managed);
+  Serial.printf("ADMIN applied: blacklist %s%d added, %d removed -> %u entries; profiles %s; TZ %s\n",
+                sum.blacklistReplaced ? "replaced, " : "", sum.blacklistAdded, sum.blacklistRemoved,
+                static_cast<unsigned>(managed.blacklist.size()),
+                sum.profilesReplaced ? "replaced" : "unchanged",
+                sum.tzReplaced ? managed.tzRule.c_str() : "unchanged");
+  led.show(LedPattern::Admin, 1500);
+  return Outcome::Final;
+}
+
 Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   const uint32_t t0 = millis();
   if (!picc.isMifareDESFire()) return deny("not a DESFire card");
@@ -189,6 +326,10 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   if (!dep) return deny("no ISO-DEP context");
   M5DesfireTransport transport{*dep};
   DesfireAuth card{transport};
+
+  // Admin application present? Then this is an admin card (never opens).
+  if (card.selectApplication(kAdminAid)) return handleAdminCard(picc, card);
+  if (card.lastStatus() == kNoResponse) return retry(card.lastError());
 
   if (!card.selectApplication(kSiteAid)) {
     if (card.lastStatus() == kStatusNoSuchApp) return deny("no application for this site (4F4331)");
@@ -242,7 +383,9 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   }
 
   std::vector<uint8_t> file0;
-  if (!card.readDataEncrypted(0, 0, kHeaderSize, file0)) return retry("encrypted read of header");
+  if (!card.readDataEncrypted(0, 0, kHeaderSize, file0)) {
+    return cardFailure(card, "encrypted read of header");
+  }
   CardHeader h;
   parseHeader(file0.data(), file0.size(), h);
   Serial.printf("REC   credential %lu, format %u, %u entries\n",
@@ -253,18 +396,20 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
 
   uint32_t now = 0;
   const bool timeKnown = lockClock.now(now);
-  const Decision pre = checkHeader(h, kLock, timeKnown, now);
+  std::vector<uint32_t> blacklistNow;
+  const LockConfig lock = currentLock(blacklistNow, timeKnown, now);
+  const Decision pre = checkHeader(h, lock, timeKnown, now);
   if (pre != Decision::Open) return deny(toString(pre));
 
   std::vector<uint8_t> file1;
   std::vector<AccessEntry> entries;
   if (h.entryCount) {
     if (!card.readDataEncrypted(1, 0, h.entryCount * kEntrySize, file1)) {
-      return retry("encrypted read of access list");
+      return cardFailure(card, "encrypted read of access list");
     }
     parseEntries(file1.data(), file1.size(), h.entryCount, entries);
   }
-  const Result r = decide(h, entries, kLock, timeKnown, now);
+  const Result r = decide(h, entries, lock, timeKnown, now);
   const uint32_t ms = millis() - t0;
   if (r.decision == Decision::Open) {
     if (r.matched.timeProfile) {
@@ -324,7 +469,21 @@ void setup() {
     return;
   }
 
-  if (!parsePosixTz(kSiteTz, siteTz)) {
+  if (!managedStore.load(managed)) {
+    setDefaults(managed);
+    Serial.println("Managed config: factory defaults (no admin bundle applied yet)");
+  } else {
+    Serial.printf("Managed config: bundle sequence %lu, %u blacklist entries, %u profiles\n",
+                  static_cast<unsigned long>(managed.lastSequence),
+                  static_cast<unsigned>(managed.blacklist.size()),
+                  static_cast<unsigned>(managed.profiles.size()));
+  }
+  const uint64_t mac = ESP.getEfuseMac();
+  memset(deviceId, 0, sizeof deviceId);
+  for (int i = 0; i < 6; ++i) deviceId[2 + i] = static_cast<uint8_t>(mac >> (8 * (5 - i)));
+  Serial.printf("Device ID %02X%02X%02X%02X%02X%02X%02X%02X\n", deviceId[0], deviceId[1],
+                deviceId[2], deviceId[3], deviceId[4], deviceId[5], deviceId[6], deviceId[7]);
+  if (!parsePosixTz(managed.tzRule.c_str(), siteTz)) {
     Serial.println("ERROR: invalid site time zone rule");
     led.show(LedPattern::Error);
     return;

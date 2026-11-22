@@ -3,7 +3,9 @@
   "site": {
     "name": "St. Example Hospital (fictional)",
     "aid": "4F4331",
+    "admin_aid": "4F4341",
     "timezone": "Europe/Berlin",
+    "posix_tz": "CET-1CEST,M3.5.0,M10.5.0/3",
     "issued_at": "2026-11-23T08:00:00Z"
   },
 

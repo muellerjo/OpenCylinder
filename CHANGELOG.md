@@ -38,6 +38,14 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw + examples: maintenance admin card — signed management bundles
+  (ECDSA P-256 over SHA-256, mbedTLS) with time sync, blacklist add/remove/
+  replace (with expiry), time profiles and TZ, anti-replay sequence; state in
+  NVS; `management` lib with host tests; `bundle.py`, `write_admin_card.py`
+  (reuses the admin app — DESFire does not free memory on delete). Verified on
+  the bench: apply, stale replay, blacklist + un-blacklist, bad signature,
+  persistence across reset. Card errors with a status are refused at once
+  (only no-response is retried).
 - docs: online-architecture.md — update points, online doors, radio; firmware
   as board × variant, offline builds without radio code, remote unlock off by
   default.

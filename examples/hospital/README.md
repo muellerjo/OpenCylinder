@@ -126,6 +126,28 @@ card** (NXP AN10922, [`an10922.py`](an10922.py), M = UID ‖ AID); the script
 verifies this with the Proxmark's own `--kdf AN10922`. Needs the Python
 `cryptography` package.
 
+## Admin card (maintenance bundle)
+
+Put the site's **admin application** (`4F4341`) with a **signed maintenance
+bundle** onto a DESFire card ([`spec/admin-card.md`](../../spec/admin-card.md)):
+time, blacklist, time profiles and time-zone rule, signed with the public dev
+key [`dev_management_key.pem`](dev_management_key.pem) (bench only). A lock that
+finds the admin application applies the bundle and never opens.
+
+```
+python3 write_admin_card.py                          # full bundle from site.json
+python3 write_admin_card.py --blacklist-add 2001     # blacklist Sara
+python3 write_admin_card.py --blacklist-remove 2001  # and back
+python3 write_admin_card.py --tamper                 # manipulated -> lock: bad signature
+python3 write_admin_card.py --sequence 5             # old sequence -> lock: stale
+python3 write_admin_card.py --remove                 # delete the admin application
+```
+
+The script reuses an existing admin application and only rewrites its files:
+**DESFire does not free memory when an application is deleted** — only
+`hf mfdes formatpicc` does. Recreating it on every run fills a 4K card after a
+few runs (`--recreate` forces it anyway).
+
 ## Not covered (yet)
 
 - Time profiles here are written informally (`days`, `from`, `to`); the

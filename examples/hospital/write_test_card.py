@@ -117,6 +117,18 @@ def read_uid(pm3, port):
     return bytes.fromhex(mt.group(1))
 
 
+def data_hex(out):
+    """Hex bytes of a Proxmark file dump (the `| XX XX .. |` data columns), joined."""
+    cols = re.findall(r"\|\s*((?:[0-9A-Fa-f]{2}\s+)+)\|", out)
+    return "".join(c.replace(" ", "") for c in cols).upper()
+
+
+def verified(out, expected_hex):
+    """True if the expected bytes appear in the dump (or, for non-dump output, in the text)."""
+    return expected_hex.upper() in data_hex(out) or \
+        expected_hex.upper() in re.sub(r"\s", "", out).upper()
+
+
 def looks_failed(out):
     for line in out.splitlines():
         if line.startswith(ERROR_MARKERS) or (line.startswith("[") and ERROR_WORDS.search(line)):
@@ -184,7 +196,7 @@ def main():
 
         failed = looks_failed(out)
         if not failed and s["verify"]:
-            failed = s["verify"].upper() not in re.sub(r"\s", "", out).upper()
+            failed = not verified(out, s["verify"])
 
         ok = failed if s["expect"] == "fail" else not failed
         if ok:

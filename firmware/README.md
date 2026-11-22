@@ -56,8 +56,17 @@ Communication failures (the card browns out during the AES computation when
 it sits at a bad angle or is still moving into the field) are retried up to
 3 times; real refusals are final at once.
 
+**Admin card (maintenance bundle):** a card with the admin application
+`4F4341` is an admin card — the lock verifies the signed bundle (site,
+target, expiry, ECDSA P-256 signature, sequence), syncs its time (rollback
+rule), applies blacklist / profiles / TZ, stores them in NVS, shows blue and
+never opens. Signature check ≈ 350 ms on the ESP32-C3 (software ECC; the
+nRF52 CryptoCell does it in hardware). Write one with
+[`examples/hospital/write_admin_card.py`](../examples/hospital/write_admin_card.py).
+
 **Time profiles** of the example (day shift, cleaning shift, office hours)
-and the site time zone `CET-1CEST,M3.5.0,M10.5.0/3` are built in
+and the site time zone `CET-1CEST,M3.5.0,M10.5.0/3` are the factory defaults
+(replaced by admin bundles)
 ([`spec/time-profiles.md`](../spec/time-profiles.md)).
 
 **Clock & rollback:** the time is RAM only (reset → unknown); the high-water
@@ -82,6 +91,7 @@ hold the card flat, short blue flash every 2 s = time unknown, fast red blink
 | `time` | UTC + local time, high-water mark |
 | `time <unix-utc-seconds>` | set the time (rollback rule applies) |
 | `time reset-hwm` | forget the high-water mark and the time (bench only) |
+| `mgmt` / `mgmt reset` | show the managed configuration (bundle sequence, blacklist, profiles, TZ) / back to factory defaults (bench only) |
 | `uidmode key2` / `uidmode auto` | force the random-UID path (key 2 + `GetCardUID`) on fixed-UID cards / back to normal |
 | `help` | |
 

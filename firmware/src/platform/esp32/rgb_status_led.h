@@ -16,6 +16,7 @@ enum class LedPattern : uint8_t {
   Unreadable,   // yellow, blinking
   TimeUnknown,  // blue, short flash every 2 s (idle pattern)
   Error,        // red, fast blink (forever)
+  Admin,        // blue, steady (admin bundle applied)
 };
 
 class RgbStatusLed {
@@ -87,6 +88,7 @@ class RgbStatusLed {
       case LedPattern::Open:        write(0, kLevel, 0); break;
       case LedPattern::Deny:        write(kLevel, 0, 0); break;
       case LedPattern::Retry:       write(kLevel, kLevel / 2, 0); break;
+      case LedPattern::Admin:       write(0, 0, kLevel); break;
       case LedPattern::Unreadable:  lit_ ? write(kLevel, kLevel / 2, 0) : write(0, 0, 0); break;
       case LedPattern::TimeUnknown: lit_ ? write(0, 0, kLevel) : write(0, 0, 0); break;
       case LedPattern::Error:       lit_ ? write(kLevel, 0, 0) : write(0, 0, 0); break;

@@ -187,6 +187,26 @@ After a decommission the lock only accepts a commissioning card **written
 after** that decommission (sequence floor) — re-run
 `write_commissioning_card.py` to get one.
 
+## Several sites on one card (DAM, DESFire EV2/EV3)
+
+A second fictional site lives in [`../ems-station/`](../ems-station/) (own
+AID `4F4332`, own keys, own management key). One EV3 card can carry the
+hospital **and** the EMS station application, each created by its site
+itself within a quota the card owner granted:
+
+```
+python3 dam_setup.py --format                     # card owner: DAM keys (once per card)
+python3 dam_setup.py --grant --site ../ems-station/site.json --slot 1   # owner-side grant only
+python3 write_test_card.py --dam 2 --user 2001    # hospital creates its app (slot 2)
+python3 write_test_card.py --dam 1 --site ../ems-station/site.json --user 9001   # EMS (slot 1)
+```
+
+A lock commissioned for the hospital reads only the hospital application; the
+same lock commissioned for the EMS station (`write_commissioning_card.py
+--site ../ems-station/site.json --door 2`) reads only the EMS application.
+Site keys live in each site's `site.json` under `dev_keys` (public bench test
+keys; [`sitekeys.py`](sitekeys.py)).
+
 ## Card roles
 
 One card, one role. The lock checks identify → commissioning → admin →

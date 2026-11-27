@@ -38,6 +38,14 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- examples: several independent sites on one card via DESFire EV2/EV3 DAM —
+  `dam.py` (owner's grant: EncK, DAMMAC; verified against the Proxmark trace),
+  `dam_setup.py` (DAM keys, grant), `write_test_card.py --dam SLOT`
+  (delegated creation, no format), per-site dev keys in `site.json`
+  (`sitekeys.py`), second example site `examples/ems-station/`. Verified on a
+  DESFire EV3: one card with hospital + EMS applications; the lock reads only
+  the application of the site it is commissioned for.
+- fw: "no application for this site" shows the configured site AID.
 - fw: rollback rule compares against the later of the high-water mark and
   the running clock (the mark is only written every 10 min, so old bundles
   could turn the clock back by up to 15 min); stale bundles may only move the

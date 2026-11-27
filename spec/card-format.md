@@ -182,6 +182,34 @@ application, the card must allow it:
 **Recommendation:** DESFire **EV2/EV3 with DAM** for cards that carry several
 sites; EV1 for development and single-site use.
 
+### DAM in practice (implemented in the examples, verified on a DESFire EV3)
+
+1. **Card owner, once per card:** set the three DAM keys at card level —
+   `0x10` auth, `0x11` MAC, `0x12` ENC (2TDEA), authenticated with the card
+   master key. A factory-fresh EV3 has **no usable DAM keys**; `formatpicc`
+   deletes applications but **keeps** the DAM keys.
+2. **Card owner, per site — the grant:** for one AID, DAM slot and quota
+   (blocks of 32 bytes) the owner computes
+   `part1 = AID(3, LE) | slot(2, LE) | slot version | quota(2, LE) | KS1 | KS2`,
+   `EncK = 2TDEA-CBC(DAM ENC key, IV 0, 7 random | initial app key(16) | key version | 0-pad to 32)`,
+   `DAMMAC = CMAC(DAM MAC key, 0xC9 | part1 | EncK)` and hands
+   `part1, EncK, DAMMAC` plus the DAM auth key to the site. The DAM MAC and
+   ENC keys never leave the owner.
+3. **Site:** authenticates with the DAM auth key, sends
+   `CreateDelegatedApplication` (`0xC9 part1`, then `0xAF EncK | DAMMAC`) and
+   immediately replaces the initial app key with its **own** keys (issuer,
+   read, UID key as in [Application](#application)). The card verifies the
+   DAMMAC: the site can create only that AID, in that slot, within that
+   quota. One OpenCylinder application needs 10 blocks (application 5, files
+   5); the examples grant 16.
+4. **Locks need nothing new:** a lock selects its own site AID and never sees
+   how an application was created.
+
+Bench note: the Proxmark3 `hf mfdes createdelegateapp` computes the grant
+itself from the DAM MAC/ENC keys, i.e. it plays owner and site at once;
+`examples/hospital/dam.py` is the owner's computation alone (verified to give
+the same DAMMAC as the Proxmark, which the card accepted).
+
 ### Privacy
 
 - If the application list is readable without authentication, any reader can

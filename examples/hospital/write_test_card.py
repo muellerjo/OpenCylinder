@@ -10,6 +10,7 @@ independently with the Proxmark's own AN10922 implementation (--kdf).
   python3 write_test_card.py --dry-run          # only show the commands
   python3 write_test_card.py                    # Sara Yilmaz (2001), asks before wiping
   python3 write_test_card.py --user 2002 --yes  # Max Huber, no question
+  python3 write_test_card.py --dam 2            # EV2/EV3: delegated app in DAM slot 2, no format
 
 !! Step 1 FORMATS THE CARD (all applications are deleted). Dev cards only,
 !! card master key must still be the factory default.
@@ -46,7 +47,7 @@ def step(desc, cmd, expect="ok", verify_hex=None):
     return {"desc": desc, "cmd": cmd, "expect": expect, "verify": verify_hex}
 
 
-def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input):
+def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input, dam_slot=None):
     auth0 = f"-n 0 -t aes -k {k0_card}"
     auth1 = f"-n 1 -t aes -k {k1_card}"
     auth2 = f"-n 2 -t aes -k {K2_UID}"
@@ -56,10 +57,25 @@ def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input):
         return (f"hf mfdes changekey --aid {aid} -n 0 -t aes -k {ZERO} --newkeyno {no} "
                 f"--oldalgo aes --oldkey {ZERO} --newalgo aes --newkey {new} --newver 01")
 
-    s = [
-        step("A1  format card (delete all applications)", "hf mfdes formatpicc"),
-        step(f"A2  create application {aid} with 3 AES keys",
-             f"hf mfdes createapp --aid {aid} --ks1 0B --dstalgo aes --numkeys 3"),
+    if dam_slot is None:
+        create = [
+            step("A1  format card (delete all applications)", "hf mfdes formatpicc"),
+            step(f"A2  create application {aid} with 3 AES keys",
+                 f"hf mfdes createapp --aid {aid} --ks1 0B --dstalgo aes --numkeys 3"),
+        ]
+    else:
+        # DAM (EV2/EV3): no format — other sites' applications stay. The card
+        # owner's DAM keys must be set (dam_setup.py). Bench: the Proxmark
+        # computes the owner's grant (EncK, DAMMAC) from the owner's DAM keys,
+        # i.e. it plays both roles; dam.py shows the owner's computation alone.
+        from dam import DAM_AUTH_KEY, DAM_ENC_KEY, DAM_MAC_KEY
+        create = [
+            step(f"A2  create DELEGATED application {aid} (DAM slot {dam_slot}, quota 16 blocks)",
+                 f"hf mfdes createdelegateapp --aid {aid} --damslot {dam_slot:04X} --damslotver 00 "
+                 f"--quota 0010 --ks1 0B --dstalgo aes --numkeys 3 -t 2TDEA -k {DAM_AUTH_KEY} "
+                 f"--damenckey {DAM_ENC_KEY} --dammackey {DAM_MAC_KEY} --dstkey {ZERO} --dstkeyver 00"),
+        ]
+    s = create + [
         step("A3  set key 1 (site read key, diversified)", chkey(1, k1_card)),
         step("A3  set key 2 (UID key, site-wide)", chkey(2, K2_UID)),
         step("A3  set key 0 (issuer key, diversified) — last", chkey(0, k0_card)),
@@ -149,9 +165,17 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="only print the commands")
     ap.add_argument("--uid", help="card UID for --dry-run (hex, 7 bytes)")
     ap.add_argument("--yes", action="store_true", help="don't ask before formatting the card")
+    ap.add_argument("--dam", type=int, metavar="SLOT",
+                    help="EV2/EV3: create the application DELEGATED in this DAM slot instead of "
+                         "formatting the card (other sites' applications stay; see dam_setup.py)")
     args = ap.parse_args()
 
     site = json.loads(args.site.read_text())
+    from sitekeys import site_keys
+    keys = site_keys(site, args.site)
+    global K0_ISSUER_MASTER, K1_READ_MASTER, K2_UID
+    K0_ISSUER_MASTER, K1_READ_MASTER, K2_UID = (keys["issuer_master"], keys["read_master"],
+                                                keys["uid_key"])
     user = next((u for u in site["users"] if u["credential_id"] == args.user), None)
     if user is None:
         sys.exit(f"no user with credential_id {args.user} in {args.site}")
@@ -170,7 +194,7 @@ def main():
     m = opencylinder_input(uid, aid_wire)
     k0_card = diversify(bytes.fromhex(K0_ISSUER_MASTER), m).hex().upper()
     k1_card = diversify(bytes.fromhex(K1_READ_MASTER), m).hex().upper()
-    steps = build_steps(aid, file0, file1_used, k0_card, k1_card, m.hex().upper())
+    steps = build_steps(aid, file0, file1_used, k0_card, k1_card, m.hex().upper(), args.dam)
 
     print(f"Card for {user['name']} (credential {user['credential_id']}), site AID {aid}")
     print(f"  card UID {uid.hex(' ').upper()}  ->  diversification input {m.hex(' ').upper()}")
@@ -181,7 +205,7 @@ def main():
         for s in steps:
             print(f"# {s['desc']}\n{s['cmd']}\n")
         return
-    if not args.yes:
+    if not args.yes and args.dam is None:
         answer = input("Step A1 FORMATS the card on the Proxmark (dev card only). Continue? [y/N] ")
         if answer.strip().lower() not in ("y", "yes", "j", "ja"):
             sys.exit("aborted, nothing was sent to the card")

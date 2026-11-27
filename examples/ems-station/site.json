@@ -1,0 +1,61 @@
+{
+  "_comment": "Second fictional example site (EMS station) for OpenCylinder card format v1 — shows several independent sites on one card (DESFire EV2/EV3 DAM). All names are invented. Dev test keys only.",
+  "site": {
+    "name": "EMS Station North (fictional)",
+    "aid": "4F4332",
+    "admin_aid": "4F4342",
+    "timezone": "Europe/Berlin",
+    "posix_tz": "CET-1CEST,M3.5.0,M10.5.0/3",
+    "issued_at": "2026-11-27T08:00:00Z"
+  },
+
+  "dev_keys": {
+    "_comment": "PUBLIC DEV TEST KEYS for this example site only — independent of the hospital's keys.",
+    "issuer_master":       "3F3E3D3C3B3A39383736353433323130",
+    "read_master":         "5A5B5C5D5E5F50515253545556575859",
+    "uid_key":             "C0C1C2C3C4C5C6C7C8C9CACBCCCDCECF",
+    "admin_issuer_master": "4F4E4D4C4B4A49484746454443424140",
+    "admin_read_master":   "B1B2B3B4B5B6B7B8B9BABBBCBDBEBFB0",
+    "management_key_file": "dev_management_key.pem"
+  },
+
+  "zones": [
+    { "id": 1, "name": "Station building" },
+    { "id": 2, "name": "Vehicle hall" },
+    { "id": 3, "name": "Narcotics & medication" }
+  ],
+
+  "doors": [
+    { "id": 1, "name": "Main door",       "zones": [1] },
+    { "id": 2, "name": "Vehicle hall",    "zones": [1, 2] },
+    { "id": 3, "name": "Narcotics safe",  "zones": [3] },
+    { "id": 4, "name": "Crew lounge",     "zones": [1] }
+  ],
+
+  "time_profiles": [
+    { "id": 1, "name": "Weekend shifts", "days": ["Fri", "Sat", "Sun"], "from": "18:00", "to": "06:00" }
+  ],
+
+  "roles": {
+    "volunteer": {
+      "label": "Volunteer paramedic (Ehrenamt)",
+      "entries": [ { "zone": 1 }, { "zone": 2 } ]
+    },
+    "lead-paramedic": {
+      "label": "Lead paramedic (Notfallsanitäter, Wachleitung)",
+      "entries": [ { "zone": 1 }, { "zone": 2 }, { "zone": 3 } ]
+    },
+    "weekend-driver": {
+      "label": "Weekend driver",
+      "entries": [ { "zone": 1, "profile": 1 }, { "zone": 2, "profile": 1 } ]
+    }
+  },
+
+  "users": [
+    { "credential_id": 9001, "name": "Sara Yilmaz",  "roles": ["volunteer"], "note": "also a nurse at the hospital — both sites on ONE card (DAM)" },
+    { "credential_id": 9002, "name": "Tom Weber",    "roles": ["lead-paramedic"] },
+    { "credential_id": 9003, "name": "Lina Brück",   "roles": ["weekend-driver"] }
+  ],
+
+  "blacklist": []
+}

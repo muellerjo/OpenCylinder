@@ -633,7 +633,11 @@ Outcome evaluateCard(m5::nfc::a::PICC& picc) {
   if (card.lastStatus() == kNoResponse) return retry(card.lastError());
 
   if (!card.selectApplication(site.siteAid)) {
-    if (card.lastStatus() == kStatusNoSuchApp) return deny("no application for this site (4F4331)", deny_code::kNoSiteApp);
+    if (card.lastStatus() == kStatusNoSuchApp) {
+      Serial.printf("      [no application %02X%02X%02X on this card]\n", site.siteAid[2],
+                    site.siteAid[1], site.siteAid[0]);
+      return deny("no application for this site", deny_code::kNoSiteApp);
+    }
     if (card.lastStatus() == kNoResponse) return retry(card.lastError());
     Serial.printf("      [%s, status %02X]\n", card.lastError(), card.lastStatus());
     return deny("select application failed");

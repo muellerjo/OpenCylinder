@@ -37,9 +37,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bundle import (T_BLACKLIST_REPLACE, T_TIME_PROFILES, T_TZ_RULE,  # noqa: E402
                     blacklist_value, build_bundle, load_signing_key, profiles_value,
                     public_key_raw, sign, tlv)
-from write_admin_card import KA1_ADMIN_READ_MASTER  # noqa: E402
-from write_test_card import (K1_READ_MASTER, K2_UID, ZERO, looks_failed, run_pm3,  # noqa: E402
-                             step, verified)
+from sitekeys import site_keys  # noqa: E402
+from write_test_card import ZERO, looks_failed, run_pm3, step, verified  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 AID = "4F434B"
@@ -72,13 +71,13 @@ def resolve_qr(qr):
     return f"OC1:{dev}:{locks[dev]['public_key']}"
 
 
-def commissioning_bundle(site, door, device_id, lock_pub33, key, now, valid_days):
+def commissioning_bundle(site, door, device_id, lock_pub33, key, now, valid_days, keys):
     zones = next(d["zones"] for d in site["doors"] if d["id"] == door)
     wire = lambda aid: bytes.fromhex(aid)[::-1]  # noqa: E731
     mgmt_pub = public_key_raw(key)  # uncompressed, 65 bytes
     plain = (wire(site["site"]["aid"]) + wire(site["site"]["admin_aid"]) +
-             bytes.fromhex(K1_READ_MASTER) + bytes.fromhex(K2_UID) +
-             bytes.fromhex(KA1_ADMIN_READ_MASTER) + mgmt_pub +
+             bytes.fromhex(keys["read_master"]) + bytes.fromhex(keys["uid_key"]) +
+             bytes.fromhex(keys["admin_read_master"]) + mgmt_pub +
              struct.pack("<HB", door, len(zones)) + b"".join(struct.pack("<H", z) for z in zones))
 
     # Other records: maintenance data so the lock is complete after one tap.
@@ -114,7 +113,7 @@ def main():
                                  "from locks.local.json (default: the only recorded lock)")
     ap.add_argument("--door", type=int, help="door ID from site.json")
     ap.add_argument("--site", default=HERE / "site.json", type=Path)
-    ap.add_argument("--key", default=HERE / "dev_management_key.pem", type=Path)
+    ap.add_argument("--key", default=None, type=Path, help="default: the site's management key")
     ap.add_argument("--valid-days", type=float, default=2)
     ap.add_argument("--remove", action="store_true", help="delete the commissioning application")
     ap.add_argument("--dry-run", action="store_true")
@@ -132,11 +131,12 @@ def main():
         if args.door is None:
             sys.exit("--door is required")
         site = json.loads(args.site.read_text())
+        keys = site_keys(site, args.site)
         device_id, lock_pub33 = parse_qr(resolve_qr(args.qr))
-        key = load_signing_key(args.key)
+        key = load_signing_key(args.key or keys["management_key_path"])
         now = int(time.time())
         bundle, zones = commissioning_bundle(site, args.door, device_id, lock_pub33, key, now,
-                                             args.valid_days)
+                                             args.valid_days, keys)
         if len(bundle) > FILE_SIZE:
             sys.exit(f"bundle too large: {len(bundle)} bytes")
         print(f"Commissioning bundle for device {device_id.hex().upper()}: door {args.door}, "

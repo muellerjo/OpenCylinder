@@ -79,7 +79,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--site", default=HERE / "site.json", type=Path)
-    ap.add_argument("--key", default=HERE / "dev_management_key.pem", type=Path,
+    ap.add_argument("--key", default=None, type=Path,
                     help="management signing key (PEM)")
     ap.add_argument("--decommission", action="store_true",
                     help="decommission ONE lock (needs --qr): it forgets the site -> FACTORY")
@@ -105,6 +105,13 @@ def main():
     args = ap.parse_args()
 
     site = json.loads(args.site.read_text())
+    from sitekeys import site_keys
+    keys = site_keys(site, args.site)
+    global KA0_ADMIN_ISSUER_MASTER, KA1_ADMIN_READ_MASTER
+    KA0_ADMIN_ISSUER_MASTER = keys["admin_issuer_master"]
+    KA1_ADMIN_READ_MASTER = keys["admin_read_master"]
+    if args.key is None:
+        args.key = keys["management_key_path"]
     admin_aid = site["site"]["admin_aid"]
     site_aid_wire = bytes.fromhex(site["site"]["aid"])[::-1]
     admin_aid_wire = bytes.fromhex(admin_aid)[::-1]

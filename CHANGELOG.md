@@ -38,6 +38,16 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw + examples: reassignment and decommissioning — targeted signed
+  bundles with records 0x31 (new door / zones, stays OWNED) and 0x40
+  (wipe site data -> FACTORY; device key pair, event log kept); records
+  refused in untargeted bundles; sequence floor kept across decommission so
+  old commissioning / decommission cards cannot be replayed; DECOM / REASS
+  log events; `write_admin_card.py --reassign --door N` / `--decommission`;
+  scripts take the lock from the site database (`--qr` optional). Verified on
+  the bench incl. both replay refusals; firmware works unchanged on
+  DESFire EV3 8K.
+- docs: one card, one role — card check order documented.
 - fw + examples: commissioning — FACTORY lock decrypts the ECIES record
   (ECDH P-256, HKDF-SHA256 per RFC 5869 with boot self-test, AES-128-GCM)
   with its device private key, verifies the bundle with the received site

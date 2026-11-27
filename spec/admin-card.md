@@ -3,9 +3,9 @@
 **Status: draft. Implemented: maintenance bundles (time, blacklist, profiles,
 TZ, sequence, ECDSA P-256 signature) — firmware `lib/management`, encoder
 `examples/hospital/bundle.py` / `write_admin_card.py`, verified on the bench.
-Local event log (§6, v1), device key pair, lock states, identify card and
-commissioning (§5.1–5.3, §5.5) implemented. Not yet: reassignment,
-decommissioning (§5.4), log read-out via card.** Design decisions
+Local event log (§6, v1), device key pair, lock states, identify card,
+commissioning, reassignment and decommissioning (§5.1–5.5) implemented and
+verified on the bench. Not yet: log read-out via card.** Design decisions
 taken 2026-11-23 (marked **Decision**).
 Context: [`docs/commissioning.md`](../docs/commissioning.md),
 [`docs/lifecycle-and-security.md`](../docs/lifecycle-and-security.md).
@@ -235,8 +235,26 @@ and zones travel encrypted inside `0x30`.)
   decommission** (no value), sequence newer than the last applied → the lock
   wipes its site data → FACTORY. An old decommission card is refused by the
   sequence rule.
+- **Sequence floor:** the lock keeps the sequence of its last decommission
+  across FACTORY (like the device key pair). A commissioning bundle must be
+  **newer** than that floor, so neither an old commissioning card nor an old
+  decommission card can be replayed after a decommission (the encoder uses
+  the Unix time as sequence, so a freshly written card always qualifies).
 - **Site keys lost:** hard reset via the internal pads
   (`docs/lifecycle-and-security.md` §2.6) → FACTORY, then commission again.
+
+### 5.4a One card, one role
+
+A lock checks a presented card in a fixed order and acts on the **first**
+application it finds:
+
+1. identify application (`4F4349`) — write identity, never opens
+2. commissioning application (`4F434B`) — only in FACTORY
+3. admin application (site admin AID) — maintenance / reassign / decommission, never opens
+4. user application (site AID) — the access decision
+
+A card carrying several of these acts only in its first role. Give every
+card exactly one role (and label it).
 
 ### 5.5 Identify card
 

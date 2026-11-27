@@ -173,6 +173,27 @@ python3 write_commissioning_card.py --qr "OC1:<device ID>:<public key>" --door 4
 
 The lock is recorded in the git-ignored site database `locks.local.json`.
 
+## Reassign or decommission a lock
+
+Signed bundles **targeted at one lock** (taken from `locks.local.json`, or
+`--qr` / a device ID), written onto an admin card:
+
+```
+python3 write_admin_card.py --reassign --door 6   # same owner, new door / zones
+python3 write_admin_card.py --decommission        # lock forgets the site -> FACTORY
+```
+
+After a decommission the lock only accepts a commissioning card **written
+after** that decommission (sequence floor) — re-run
+`write_commissioning_card.py` to get one.
+
+## Card roles
+
+One card, one role. The lock checks identify → commissioning → admin →
+user application and acts on the first one it finds
+([`spec/admin-card.md`](../../spec/admin-card.md) §5.4a), so label the cards
+(USER name, ADMIN, COMM, DECOM, IDENT).
+
 ## Not covered (yet)
 
 - Time profiles here are written informally (`days`, `from`, `to`); the

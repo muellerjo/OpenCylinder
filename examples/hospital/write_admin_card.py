@@ -13,6 +13,8 @@ application applies the bundle and never opens.
   python3 write_admin_card.py --blacklist-remove 2001   # only: un-blacklist Sara
   python3 write_admin_card.py --sequence 5              # force a (stale) sequence number
   python3 write_admin_card.py --tamper                  # manipulated bundle (must be refused)
+  python3 write_admin_card.py --decommission             # one lock -> FACTORY (lock from locks.local.json)
+  python3 write_admin_card.py --reassign --door 6        # one lock -> new door / zones
   python3 write_admin_card.py --remove                  # delete the admin application again
 
 Dev card only (factory-default card master key). Needs the Proxmark3 client
@@ -29,7 +31,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from an10922 import diversify  # noqa: E402
 from bundle import (T_BLACKLIST_ADD, T_BLACKLIST_REMOVE, T_BLACKLIST_REPLACE,  # noqa: E402
-                    T_TIME_PROFILES, T_TZ_RULE, blacklist_value, build_bundle,
+                    T_DECOMMISSION, T_LOCK_ASSIGNMENT, T_TIME_PROFILES, T_TZ_RULE, blacklist_value, build_bundle,
                     load_signing_key, profiles_value, public_key_raw, sign, tlv)
 from write_test_card import ZERO, looks_failed, read_uid, run_pm3, step, verified  # noqa: E402
 
@@ -42,6 +44,7 @@ KA1_ADMIN_READ_MASTER = "A1B2C3D4E5F60718293A4B5C6D7E8F90"
 ADMIN_FORMAT_VERSION = 1
 BUNDLE_FILE_SIZE = 0x400
 ACT_TIME, ACT_BLACKLIST, ACT_PROFILES = 0x01, 0x02, 0x04
+ACT_REASSIGN, ACT_DECOMMISSION = 0x08, 0x10
 
 
 def unix(iso):
@@ -52,6 +55,12 @@ def unix(iso):
 def build_records(site, args):
     recs, actions = b"", ACT_TIME
     far_future = 0xFFFFFFFF
+    if args.decommission:
+        return tlv(T_DECOMMISSION, b""), actions | ACT_DECOMMISSION
+    if args.reassign:
+        zones = next(d["zones"] for d in site["doors"] if d["id"] == args.door)
+        value = struct.pack("<HB", args.door, len(zones)) + b"".join(struct.pack("<H", z) for z in zones)
+        return tlv(T_LOCK_ASSIGNMENT, value), actions | ACT_REASSIGN
     if args.blacklist_add or args.blacklist_remove:
         if args.blacklist_add:
             recs += tlv(T_BLACKLIST_ADD, blacklist_value((c, far_future) for c in args.blacklist_add))
@@ -72,6 +81,13 @@ def main():
     ap.add_argument("--site", default=HERE / "site.json", type=Path)
     ap.add_argument("--key", default=HERE / "dev_management_key.pem", type=Path,
                     help="management signing key (PEM)")
+    ap.add_argument("--decommission", action="store_true",
+                    help="decommission ONE lock (needs --qr): it forgets the site -> FACTORY")
+    ap.add_argument("--reassign", action="store_true",
+                    help="give ONE lock (needs --qr) a new door / zones (needs --door)")
+    ap.add_argument("--qr", help="target lock OC1:<device ID>:<public key>, or a device ID from "
+                                 "locks.local.json (default: the only recorded lock)")
+    ap.add_argument("--door", type=int, help="door ID from site.json (with --reassign)")
     ap.add_argument("--blacklist-add", type=int, nargs="+", metavar="ID")
     ap.add_argument("--blacklist-remove", type=int, nargs="+", metavar="ID")
     ap.add_argument("--sequence", type=int, help="default: current Unix time (monotonic)")
@@ -99,10 +115,19 @@ def main():
     else:
         now = int(time.time())
         seq = args.sequence if args.sequence is not None else now
+        target = bytes(8)
+        if args.decommission or args.reassign:
+            if args.reassign and args.door is None:
+                sys.exit("--reassign needs --door")
+            from write_commissioning_card import parse_qr, resolve_qr
+            target, _pub = parse_qr(resolve_qr(args.qr))
         records, actions = build_records(site, args)
         key = load_signing_key(args.key)
         bundle = sign(build_bundle(site_aid_wire, seq, now, now + int(args.valid_days * 86400),
-                                   records), key)
+                                   records, target_device=target), key)
+        if target != bytes(8):
+            print(f"Targeted at device {target.hex().upper()}: "
+                  f"{'DECOMMISSION' if args.decommission else f'reassign to door {args.door}'}")
         if args.tamper:
             b = bytearray(bundle)
             b[30] ^= 0x01  # inside the TLV payload

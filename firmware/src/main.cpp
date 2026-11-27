@@ -96,6 +96,7 @@ const char* const kDefaultTz = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Berlin
 SiteConfig site;
 SiteStore siteStore;
 bool siteFromCommissioning = false;  // false = built-in dev site (bench)
+void printSite();
 
 // Bench: the built-in dev test site (= what the examples' commissioning card
 // carries). Removed once commissioning is the only way in.
@@ -150,6 +151,14 @@ void setLockState(LockState s) {
   statePrefs.putUChar("state", static_cast<uint8_t>(s));
 }
 const char* lockStateName() { return lockState == LockState::Owned ? "OWNED" : "FACTORY"; }
+
+// Sequence floor (kept across decommission, like the device key pair): a
+// commissioning bundle must be newer than the last decommission, so old
+// commissioning / decommission cards cannot be replayed in a loop.
+uint32_t sequenceFloor() { return statePrefs.getUInt("seqfloor", 0); }
+void raiseSequenceFloor(uint32_t s) {
+  if (s > sequenceFloor()) statePrefs.putUInt("seqfloor", s);
+}
 EventLog eventLog{eventStore, 64};
 uint32_t tapCredential = 0;   // credential of the card being evaluated (0 = not read yet)
 
@@ -227,7 +236,15 @@ void printEvent(const Event& e) {
     case EventType::Commission:
       Serial.printf("door %u, bundle sequence %lu: %s\n", e.target,
                     static_cast<unsigned long>(e.credential),
-                    toString(static_cast<CommissionStatus>(e.code)));
+                    e.code == 0xFE ? "older than last decommission"
+                                   : toString(static_cast<CommissionStatus>(e.code)));
+      break;
+    case EventType::Decommission:
+      Serial.printf("bundle sequence %lu -> FACTORY\n", static_cast<unsigned long>(e.credential));
+      break;
+    case EventType::Reassign:
+      Serial.printf("new door %u, bundle sequence %lu\n", e.target,
+                    static_cast<unsigned long>(e.credential));
       break;
     case EventType::Identify:
       Serial.printf("identity written (state %s)\n", e.code ? "OWNED" : "FACTORY");
@@ -463,6 +480,31 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
     led.show(st == BundleStatus::StaleSequence ? LedPattern::Admin : LedPattern::Deny, 1500);
     return Outcome::Final;
   }
+  if (sum.decommission) {
+    // spec §5.4: forget the site (keys, door, zones, managed config) -> FACTORY.
+    // Kept: device key pair, event log, sequence floor.
+    raiseSequenceFloor(sum.sequence);
+    siteStore.clear();
+    managedStore.clear();
+    setDefaults(managed);
+    managed.blacklist.clear();
+    site = SiteConfig{};
+    siteFromCommissioning = false;
+    setLockState(LockState::Factory);
+    eventLog.add(EventType::Decommission, 0, timeOrZero(), sum.sequence);
+    Serial.println("DECOM signed decommission for this lock -> FACTORY (site data wiped, device key kept)");
+    led.show(LedPattern::Admin, 2000);
+    return Outcome::Final;
+  }
+  if (sum.reassigned) {
+    site.doorId = sum.doorId;
+    site.zones = sum.zones;
+    siteStore.save(site);
+    siteFromCommissioning = true;
+    eventLog.add(EventType::Reassign, 0, timeOrZero(), sum.sequence, site.doorId);
+    Serial.print("REASS reassigned: ");
+    printSite();
+  }
   parsePosixTz(managed.tzRule.c_str(), siteTz);
   managedStore.save(managed);
   Serial.printf("ADMIN applied: blacklist %s%d added, %d removed -> %u entries; profiles %s; TZ %s\n",
@@ -556,6 +598,13 @@ Outcome handleCommissioningCard(DesfireAuth& card) {
   }
   bundle.insert(bundle.end(), rest.begin(), rest.end());
 
+  if (bh.sequence <= sequenceFloor()) {
+    Serial.printf("COMM  bundle sequence %lu not newer than the last decommission (%lu) - refused\n",
+                  static_cast<unsigned long>(bh.sequence), static_cast<unsigned long>(sequenceFloor()));
+    eventLog.add(EventType::Commission, 0xFE, timeOrZero(), bh.sequence);
+    led.show(LedPattern::Deny, 1500);
+    return Outcome::Final;
+  }
   const uint32_t t0 = millis();
   SiteConfig cfg;
   const CommissionStatus cs =

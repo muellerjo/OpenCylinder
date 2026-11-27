@@ -55,6 +55,23 @@ def parse_qr(text):
     return bytes.fromhex(m.group(1)), bytes.fromhex(m.group(2))
 
 
+def resolve_qr(qr):
+    """QR text given, or taken from the site database locks.local.json:
+    --qr may be omitted if exactly one lock is recorded, or be just a device ID
+    (prefix) of a recorded lock."""
+    if qr and qr.strip().upper().startswith("OC1:"):
+        return qr
+    db_path = HERE / "locks.local.json"
+    locks = json.loads(db_path.read_text())["locks"] if db_path.exists() else {}
+    matches = [d for d in locks if not qr or d.startswith(qr.strip().upper())]
+    if len(matches) != 1:
+        sys.exit(f"cannot pick a lock from {db_path.name} ({len(matches)} match): pass --qr \"OC1:...\" "
+                 "or a device ID")
+    dev = matches[0]
+    print(f"Lock from site database: device {dev} (door {locks[dev]['door']})")
+    return f"OC1:{dev}:{locks[dev]['public_key']}"
+
+
 def commissioning_bundle(site, door, device_id, lock_pub33, key, now, valid_days):
     zones = next(d["zones"] for d in site["doors"] if d["id"] == door)
     wire = lambda aid: bytes.fromhex(aid)[::-1]  # noqa: E731
@@ -93,7 +110,8 @@ def commissioning_bundle(site, door, device_id, lock_pub33, key, now, valid_days
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--qr", help="lock identity QR text OC1:<device ID>:<public key>")
+    ap.add_argument("--qr", help="lock identity OC1:<device ID>:<public key>, or a device ID "
+                                 "from locks.local.json (default: the only recorded lock)")
     ap.add_argument("--door", type=int, help="door ID from site.json")
     ap.add_argument("--site", default=HERE / "site.json", type=Path)
     ap.add_argument("--key", default=HERE / "dev_management_key.pem", type=Path)
@@ -111,10 +129,10 @@ def main():
     if args.remove:
         steps = [step(f"delete commissioning application {AID}", f"hf mfdes deleteapp --aid {AID}")]
     else:
-        if not args.qr or args.door is None:
-            sys.exit("--qr and --door are required")
+        if args.door is None:
+            sys.exit("--door is required")
         site = json.loads(args.site.read_text())
-        device_id, lock_pub33 = parse_qr(args.qr)
+        device_id, lock_pub33 = parse_qr(resolve_qr(args.qr))
         key = load_signing_key(args.key)
         now = int(time.time())
         bundle, zones = commissioning_bundle(site, args.door, device_id, lock_pub33, key, now,

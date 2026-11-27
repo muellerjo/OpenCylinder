@@ -18,6 +18,8 @@ T_BLACKLIST_REMOVE = 0x11
 T_BLACKLIST_REPLACE = 0x12
 T_TIME_PROFILES = 0x20
 T_TZ_RULE = 0x21
+T_LOCK_ASSIGNMENT = 0x31   # targeted bundles only
+T_DECOMMISSION = 0x40      # targeted bundles only
 
 DAY_BITS = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
 

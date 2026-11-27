@@ -95,6 +95,14 @@ the signature with the site key it just received, stores the site
 configuration and becomes OWNED; an OWNED lock ignores commissioning cards.
 Write one with [`examples/hospital/write_commissioning_card.py`](../examples/hospital/write_commissioning_card.py).
 
+**Reassign / decommission:** signed bundles targeted at this lock's device
+ID — record `0x31` gives a new door / zones (stays OWNED), record `0x40`
+wipes the site data → FACTORY (device key pair, event log and the sequence
+floor are kept; a later commissioning bundle must be newer than the floor).
+
+**Card check order:** identify → commissioning → admin → user application;
+one card, one role.
+
 **Identify card:** a card with the identify application (`4F4349`) is
 checked first, in every state: the lock writes its public identity (state,
 device ID, public key, firmware version, site AID, door) into the card's

@@ -26,6 +26,9 @@ constexpr uint8_t kTlvBlacklistRemove = 0x11;
 constexpr uint8_t kTlvBlacklistReplace = 0x12;
 constexpr uint8_t kTlvTimeProfiles = 0x20;
 constexpr uint8_t kTlvTzRule = 0x21;
+constexpr uint8_t kTlvLockAssignment = 0x31;  // targeted bundles only
+constexpr uint8_t kTlvDecommission = 0x40;    // targeted bundles only
+constexpr size_t kMaxAssignedZones = 16;
 
 struct BundleHeader {
   uint8_t version;
@@ -64,6 +67,7 @@ enum class BundleStatus : uint8_t {
   BadSignature,
   Expired,
   StaleSequence,   // signature fine, but not newer than the last applied one
+  NotTargeted,     // 0x31 / 0x40 in a bundle that is not targeted at one lock
 };
 const char* toString(BundleStatus s);
 
@@ -72,6 +76,10 @@ struct ApplySummary {
   uint32_t issuedAt = 0;        // caller adopts this as time (rollback rule)
   int blacklistAdded = 0, blacklistRemoved = 0;
   bool blacklistReplaced = false, profilesReplaced = false, tzReplaced = false;
+  bool decommission = false;               // record 0x40: caller wipes site data -> FACTORY
+  bool reassigned = false;                 // record 0x31: caller updates door / zones
+  uint16_t doorId = 0;
+  std::vector<uint16_t> zones;
 };
 
 // Full check + apply. `verify` is injectable for host tests (pass

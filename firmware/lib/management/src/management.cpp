@@ -58,6 +58,7 @@ BundleStatus applyBundle(const uint8_t* b, size_t len, const uint8_t siteAid[3],
   sum.issuedAt = h.issuedAt;  // time sync is valid even for a stale sequence
   if (h.sequence <= state.lastSequence) return BundleStatus::StaleSequence;
 
+  const bool targeted = !allZero(h.targetDevice, 8);
   // Parse into a copy; commit only if every record is well-formed.
   ManagedState next = state;
   const uint8_t* p = b + kBundleHeaderSize;
@@ -118,6 +119,23 @@ BundleStatus applyBundle(const uint8_t* b, size_t len, const uint8_t siteAid[3],
         sum.tzReplaced = true;
         break;
       }
+      case kTlvLockAssignment: {
+        // door (u16) | zone count (u8) | zones (u16 each)
+        if (!targeted || n < 3) return targeted ? BundleStatus::Malformed : BundleStatus::NotTargeted;
+        const uint16_t door = le16(v);
+        const uint8_t count = v[2];
+        if (door == 0 || count > kMaxAssignedZones || n != 3u + 2u * count) return BundleStatus::Malformed;
+        sum.doorId = door;
+        sum.zones.clear();
+        for (uint8_t i = 0; i < count; ++i) sum.zones.push_back(le16(v + 3 + 2 * i));
+        sum.reassigned = true;
+        break;
+      }
+      case kTlvDecommission:
+        if (!targeted) return BundleStatus::NotTargeted;
+        if (n != 0) return BundleStatus::Malformed;
+        sum.decommission = true;
+        break;
       default:
         break;  // unknown records are skipped (forward compatible)
     }
@@ -144,6 +162,7 @@ const char* toString(BundleStatus s) {
     case BundleStatus::BadSignature:  return "bad signature";
     case BundleStatus::Expired:       return "bundle expired";
     case BundleStatus::StaleSequence: return "stale sequence (not newer than last applied)";
+    case BundleStatus::NotTargeted:   return "reassign/decommission needs a bundle targeted at this lock";
   }
   return "?";
 }

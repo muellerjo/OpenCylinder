@@ -107,7 +107,8 @@ prototype uses two.
 
 1. **Option A** — everything (antenna, reader, nRF54L15, battery, clutch
    motor) in the outer knob, rotating as one unit.
-2. **Knob Ø 34 × 40 mm.**
+2. **Knob Ø 34 × 42 mm** (40 mm was too short once the CR2 contacts,
+   ~1.8 mm, are counted; mock-up in `mechanics/knob-mockup/`).
 3. **Battery CR2** (Ø 15.6 × 27 mm). Battery access: still open — from the
    front (cap) is convenient but makes the cap a service opening on the
    attack side; with the knob dismounted only is safer.

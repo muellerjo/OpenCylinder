@@ -1,0 +1,14 @@
+/* XIAO nRF54L15: the ST25R3916 unit hangs on the XIAO I2C pins D4 (SDA) /
+ * D5 (SCL) — same Grove wiring as on the ESP32-C3 bench.
+ * TODO(M1): check the node label of the XIAO I2C bus in Seeed's board
+ * definition (platform-seeedboards) — `xiao_i2c` is the usual XIAO label. */
+/ {
+	aliases {
+		nfc-i2c = &xiao_i2c;
+	};
+};
+
+&xiao_i2c {
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
+};

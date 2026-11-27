@@ -42,85 +42,34 @@ namespace {
 
 using namespace opencylinder;
 
-// ---------------------------------------------------------------- bench lock
-// Site AID 4F4331 (test site), LSB-first as sent on the wire.
-constexpr uint8_t kDevSiteAid[3] = {0x31, 0x43, 0x4F};
-constexpr uint8_t kReadKeyNo = 1;
+// ------------------------------------------------------------- key numbers
+// Key numbers inside the site applications (spec/card-format.md). The keys
+// themselves arrive only by commissioning — this firmware contains none.
+constexpr uint8_t kReadKeyNo = 1;       // site read key (diversified per card)
+constexpr uint8_t kUidKeyNo = 2;        // site-wide UID key (random-UID cards)
+constexpr uint8_t kAdminReadKeyNo = 1;  // admin read key (diversified per card)
 
-// ==== PUBLIC DEV TEST MASTER KEY — bench only, never for a real site. ====
-// Real keys never live in source code or in this repository. The card holds
-// a per-card key diversified from it (AN10922, M = UID || AID).
-constexpr uint8_t kDevReadMasterKey[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
-                                     0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF};
-// Site-wide UID key (key 2): only lets the lock fetch the real UID of a
-// random-UID card. Public dev test key.
-constexpr uint8_t kUidKeyNo = 2;
-constexpr uint8_t kDevUidKey[16] = {0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
-                                    0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF};
-
-// Dev switch (serial `uidmode`): force the random-UID path (key 2 +
+// Bench switch (serial `uidmode`): force the random-UID path (key 2 +
 // GetCardUID) also for fixed-UID cards, to test it without irreversibly
 // enabling random UID on a card.
 bool forceUidKeyPath = false;
-
-// Admin application of the test site (spec/admin-card.md) and its read key
-// master (public dev test key, diversified per card: UID || admin AID).
-constexpr uint8_t kDevAdminAid[3] = {0x41, 0x43, 0x4F};  // 4F4341, wire order
-constexpr uint8_t kAdminReadKeyNo = 1;
-constexpr uint8_t kDevAdminReadMasterKey[16] = {0xA1, 0xB2, 0xC3, 0xD4, 0xE5, 0xF6, 0x07, 0x18,
-                                                0x29, 0x3A, 0x4B, 0x5C, 0x6D, 0x7E, 0x8F, 0x90};
-// Site management public key (ECDSA P-256) — dev key from
-// examples/hospital/dev_management_key.pem. Production: installed at
-// commissioning.
-constexpr uint8_t kDevManagementPublicKey[65] = {
-    0x04, 0x72, 0x93, 0xC6, 0xEE, 0x31, 0x36, 0x4E, 0xCA, 0x9E, 0xCC, 0xD0, 0x12, 0x95, 0xED,
-    0x55, 0x56, 0x74, 0x33, 0xB0, 0xBE, 0x01, 0x79, 0xB3, 0x3E, 0x4E, 0xCE, 0x14, 0x0B, 0x04,
-    0x45, 0x3D, 0x8C, 0xA3, 0x26, 0x32, 0x9F, 0xB6, 0x6D, 0x75, 0xF6, 0xAD, 0x83, 0x97, 0xC0,
-    0x38, 0xCB, 0xC8, 0xE3, 0x85, 0xF5, 0x22, 0x07, 0x00, 0xAC, 0x49, 0xF6, 0x7A, 0x05, 0xBB,
-    0xBA, 0xAA, 0xC5, 0x79, 0xC1};
-
-// Door 4 of examples/hospital/site.json.
-constexpr uint16_t kDevDoorId = 4;
-constexpr uint16_t kDevLockZones[] = {3, 4};
-// Factory defaults of the managed configuration (until the first admin
-// bundle): blacklist, time profiles and time zone as in the example.
-const TimeProfile kDefaultProfiles[] = {
-    {1, 0x7F, {{6 * 60, 20 * 60}, {0, 0}}},                          // Day shift, daily
-    {2, kMon | kTue | kWed | kThu | kFri | kSat, {{5 * 60, 11 * 60}, {0, 0}}},  // Cleaning
-    {3, kMon | kTue | kWed | kThu | kFri, {{7 * 60, 18 * 60}, {0, 0}}},        // Office hours
-};
-const char* const kDefaultTz = "CET-1CEST,M3.5.0,M10.5.0/3";  // Europe/Berlin
 
 // Site configuration — received at commissioning (spec/admin-card.md §5.3),
 // persisted in NVS. Valid only in state OWNED.
 SiteConfig site;
 SiteStore siteStore;
-bool siteFromCommissioning = false;  // false = built-in dev site (bench)
 void printSite();
-
-// Bench: the built-in dev test site (= what the examples' commissioning card
-// carries). Removed once commissioning is the only way in.
-void loadDevSite(SiteConfig& c) {
-  memcpy(c.siteAid, kDevSiteAid, 3);
-  memcpy(c.adminAid, kDevAdminAid, 3);
-  memcpy(c.readMasterKey, kDevReadMasterKey, 16);
-  memcpy(c.uidKey, kDevUidKey, 16);
-  memcpy(c.adminReadMasterKey, kDevAdminReadMasterKey, 16);
-  memcpy(c.managementPublicKey, kDevManagementPublicKey, 65);
-  c.doorId = kDevDoorId;
-  c.zones.assign(kDevLockZones, kDevLockZones + sizeof kDevLockZones / sizeof kDevLockZones[0]);
-}
 
 ManagedState managed;     // blacklist, profiles, TZ, last bundle sequence (NVS)
 ManagedStore managedStore;
 TzRule siteTz;
 uint8_t deviceId[8];      // 00 00 + 6-byte eFuse MAC
 
+// Empty managed configuration (FACTORY, or before the first bundle): no
+// blacklist, no time profiles, UTC. Commissioning delivers the real ones.
 void setDefaults(ManagedState& m) {
   m = ManagedState{};
-  m.blacklist.push_back(BlacklistEntry{2003, 0xFFFFFFFFu});
-  m.profiles.assign(kDefaultProfiles, kDefaultProfiles + sizeof kDefaultProfiles / sizeof kDefaultProfiles[0]);
-  m.tzRule = kDefaultTz;
+  m.tzRule = "UTC0";
 }
 
 // The lock's effective configuration for one decision.
@@ -259,37 +208,23 @@ void printEvent(const Event& e) {
 
 // ------------------------------------------------------------ serial commands
 void handleCommand(const std::string& line) {
+  // Read-only commands: always available.
   if (line == "help") {
-    Serial.println("commands: time | time <unix-utc-seconds> | time reset-hwm |"
-                   " mgmt | mgmt reset | log | log clear | id | state factory|owned |"
-                   " uidmode [auto|key2] | help");
+    Serial.print("commands: time | log | id | mgmt | help");
+#if defined(OC_BENCH_COMMANDS)
+    Serial.print("\nbench:    time <unix-utc-seconds> | time reset-hwm | mgmt reset | log clear |"
+                 " state factory | uidmode [auto|key2]");
+#endif
+    Serial.println();
   } else if (line == "id") {
     char qr[100];
     identity.qrText(qr, sizeof qr);
     Serial.printf("id    state %s, %s\n", lockStateName(), qr);
-#if defined(OC_DEV_BUILTIN_SITE)
-  } else if (line == "state factory" || line == "state owned") {
-    // Bench only: simulate decommission / commission with the built-in site.
-    managedStore.clear();
-    setDefaults(managed);
-    parsePosixTz(managed.tzRule.c_str(), siteTz);
-    const bool owned = (line == "state owned");
-    siteStore.clear();
-    if (owned) loadDevSite(site);  // built-in dev site, not stored
-    siteFromCommissioning = false;
-    setLockState(owned ? LockState::Owned : LockState::Factory);
-    eventLog.add(EventType::Bench, owned ? 5 : 4, timeOrZero());
-    Serial.printf("state %s (bench; site data reset, device key pair kept)\n", lockStateName());
-#endif
   } else if (line == "log") {
     const std::vector<Event> ev = eventLog.entries();
     Serial.printf("log   %lu events total, showing the last %u\n",
                   static_cast<unsigned long>(eventLog.total()), static_cast<unsigned>(ev.size()));
     for (const Event& e : ev) printEvent(e);
-  } else if (line == "log clear") {
-    eventLog.clear();
-    eventLog.add(EventType::Bench, 3, timeOrZero());
-    Serial.println("log   cleared (bench only)");
   } else if (line == "mgmt") {
     Serial.printf("mgmt  bundle sequence %lu, TZ %s\n",
                   static_cast<unsigned long>(managed.lastSequence), managed.tzRule.c_str());
@@ -301,22 +236,39 @@ void handleCommand(const std::string& line) {
       Serial.printf("      profile %u days 0x%02X %02u:%02u-%02u:%02u\n", p.id, p.days,
                     p.iv[0].from / 60, p.iv[0].from % 60, p.iv[0].to / 60, p.iv[0].to % 60);
     }
+  } else if (line == "time") {
+    uint32_t t;
+    if (lockClock.now(t)) printTime("time  ", t);
+    else Serial.println("time  UNKNOWN");
+    if (lockClock.highWater()) printTime("      high-water mark ", lockClock.highWater());
+#if defined(OC_BENCH_COMMANDS)
+  // Bench-only commands: they bypass the signed-bundle path and must never be
+  // in a production build (OC_BENCH_COMMANDS is set only for dev boards).
+  } else if (line == "state factory") {
+    // Simulated decommission without signature: wipe site data -> FACTORY.
+    siteStore.clear();
+    managedStore.clear();
+    setDefaults(managed);
+    parsePosixTz(managed.tzRule.c_str(), siteTz);
+    site = SiteConfig{};
+    setLockState(LockState::Factory);
+    eventLog.add(EventType::Bench, 4, timeOrZero());
+    Serial.println("state FACTORY (bench; site data wiped, device key pair kept) - commission again");
+  } else if (line == "log clear") {
+    eventLog.clear();
+    eventLog.add(EventType::Bench, 3, timeOrZero());
+    Serial.println("log   cleared (bench only)");
   } else if (line == "mgmt reset") {
     managedStore.clear();
     eventLog.add(EventType::Bench, 2, timeOrZero());
     setDefaults(managed);
     parsePosixTz(managed.tzRule.c_str(), siteTz);
-    Serial.println("mgmt  reset to factory defaults (bench only)");
+    Serial.println("mgmt  reset to empty defaults (bench only)");
   } else if (line == "uidmode" || line == "uidmode auto" || line == "uidmode key2") {
     if (line != "uidmode") forceUidKeyPath = (line == "uidmode key2");
     Serial.printf("uidmode %s\n", forceUidKeyPath
                                       ? "key2 (always fetch the real UID via key 2 + GetCardUID)"
                                       : "auto (anticollision UID; key 2 only for random-UID cards)");
-  } else if (line == "time") {
-    uint32_t t;
-    if (lockClock.now(t)) printTime("time  ", t);
-    else Serial.println("time  UNKNOWN (set with: time <unix-utc-seconds>)");
-    if (lockClock.highWater()) printTime("      high-water mark ", lockClock.highWater());
   } else if (line == "time reset-hwm") {
     lockClock.resetHighWater();
     eventLog.add(EventType::Bench, 1, 0);
@@ -334,6 +286,7 @@ void handleCommand(const std::string& line) {
     }
     printTime("time  set to ", static_cast<uint32_t>(v));
     eventLog.add(EventType::TimeSet, 1, static_cast<uint32_t>(v), static_cast<uint32_t>(v));
+#endif
   } else if (!line.empty()) {
     Serial.printf("unknown command '%s' (try: help)\n", line.c_str());
   }
@@ -489,7 +442,6 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
     setDefaults(managed);
     managed.blacklist.clear();
     site = SiteConfig{};
-    siteFromCommissioning = false;
     setLockState(LockState::Factory);
     eventLog.add(EventType::Decommission, 0, timeOrZero(), sum.sequence);
     Serial.println("DECOM signed decommission for this lock -> FACTORY (site data wiped, device key kept)");
@@ -500,7 +452,6 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
     site.doorId = sum.doorId;
     site.zones = sum.zones;
     siteStore.save(site);
-    siteFromCommissioning = true;
     eventLog.add(EventType::Reassign, 0, timeOrZero(), sum.sequence, site.doorId);
     Serial.print("REASS reassigned: ");
     printSite();
@@ -564,7 +515,7 @@ void printSite() {
                 site.siteAid[2], site.siteAid[1], site.siteAid[0], site.adminAid[2],
                 site.adminAid[1], site.adminAid[0], site.doorId);
   for (uint16_t z : site.zones) Serial.printf(" %u", z);
-  Serial.println(siteFromCommissioning ? "  (commissioned)" : "  (built-in dev site)");
+  Serial.println();
 }
 
 bool deviceEcdh(const uint8_t peer[65], uint8_t shared[32]) { return identity.ecdh(peer, shared); }
@@ -622,7 +573,6 @@ Outcome handleCommissioningCard(DesfireAuth& card) {
   // records (TZ, profiles, blacklist, sequence) through the normal path.
   site = cfg;
   siteStore.save(site);
-  siteFromCommissioning = true;
   managed = ManagedState{};
   managed.tzRule = "UTC0";
   uint32_t now = 0;
@@ -852,21 +802,10 @@ void setup() {
   Serial.printf("Device key pair %s; QR: %s\n", generated ? "GENERATED (first boot)" : "loaded", qr);
 
   statePrefs.begin("oc-state", false);
-#if defined(OC_DEV_BUILTIN_SITE)
-  // Bench: until commissioning exists, a lock without stored state starts
-  // OWNED by the built-in dev test site.
-  lockState = static_cast<LockState>(statePrefs.getUChar("state", static_cast<uint8_t>(LockState::Owned)));
-#else
   lockState = static_cast<LockState>(statePrefs.getUChar("state", static_cast<uint8_t>(LockState::Factory)));
-#endif
   siteStore.begin();
-  siteFromCommissioning = (lockState == LockState::Owned) && siteStore.load(site);
-  if (lockState == LockState::Owned && !siteFromCommissioning) {
-#if defined(OC_DEV_BUILTIN_SITE)
-    loadDevSite(site);  // bench: OWNED by the built-in dev test site
-#else
+  if (lockState == LockState::Owned && !siteStore.load(site)) {
     lockState = LockState::Factory;  // no site configuration -> blank
-#endif
   }
   Serial.printf("Lock state: %s\n", lockStateName());
   if (lockState == LockState::Owned) printSite();

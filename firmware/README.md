@@ -10,6 +10,7 @@ at boot — see `../docs/versioning.md`).
 | `c3-supermini`  | ESP32-C3 SuperMini        | SDA GPIO6, SCL GPIO7  |
 | `xiao-c3`       | Seeed Studio XIAO ESP32C3 | SDA D4 (GPIO6), SCL D5 (GPIO7) |
 | `xiao-c3-debug` | as `xiao-c3`, plus M5 NFC library error/warning logs (ISO-DEP timeouts etc.) | |
+| `xiao-c3-prod` | as `xiao-c3`, **without** bench serial commands (production-style) | |
 
 ST25R3916 unit (M5Stack Unit NFC, Grove): black → GND, red → 5V,
 yellow → SDA, white → SCL.
@@ -84,9 +85,20 @@ on its first boot the lock generates its permanent ECDH P-256 device key pair
 (NVS on the dev board) and prints its QR text. Because the offline build has
 no WiFi/BT, `setup()` enables the SAR-ADC entropy source
 (`bootloader_random_enable()`), otherwise the ESP32's RNG would only be
-pseudo-random. States: **FACTORY** (opens nothing) and **OWNED**. Until
-commissioning is implemented, the bench lock starts OWNED by the built-in dev
-test site (`OC_DEV_BUILTIN_SITE`).
+pseudo-random. States: **FACTORY** (opens nothing) and **OWNED**.
+
+**The firmware contains no keys.** A freshly flashed lock is FACTORY; it gets
+its site keys, door, zones, profiles, TZ and blacklist only by commissioning.
+
+**Bench quick start** (repo root, Proxmark3 on the encoder side):
+
+1. `cd firmware && pio run -e xiao-c3 -t upload -t monitor` — the banner shows
+   `Lock state: FACTORY` and the QR text `OC1:<device ID>:<public key>`.
+2. Commissioning card for door 4:
+   `python3 examples/hospital/write_commissioning_card.py --qr "OC1:…" --door 4`
+   (afterwards `--qr` can be omitted: the lock is in `locks.local.json`).
+3. Tap it → `commissioned -> OWNED`. User cards from `write_test_card.py`
+   now work as listed below.
 
 **Commissioning card:** a FACTORY lock accepts a commissioning card
 (application `4F434B`, free-read file): it decrypts record `0x30` with its
@@ -136,19 +148,22 @@ hold the card flat, short blue flash every 2 s = time unknown, fast red blink
 = hardware or self-test error, off = idle. Pins and polarity are set in
 `platformio.ini` (`OC_LED_*`).
 
-**Serial commands** (dev only — production gets these from admin cards):
+**Serial commands** — read-only ones always; the *bench* ones only with
+`OC_BENCH_COMMANDS` (set for the dev envs, **not** in `xiao-c3-prod`): they
+bypass the signed-bundle path and must never be in a production build.
 
 | Command | |
 |---|---|
 | `time` | UTC + local time, high-water mark |
-| `time <unix-utc-seconds>` | set the time (rollback rule applies) |
-| `time reset-hwm` | forget the high-water mark and the time (bench only) |
 | `id` | lock state and identity QR text `OC1:<device ID>:<public key>` |
-| `state factory` / `state owned` | bench only (`OC_DEV_BUILTIN_SITE`): simulate decommission / commission with the built-in dev site; site data reset, device key pair kept |
-| `log` / `log clear` | local event log (last 64 events: boot, open, deny + reason, admin, time set) / clear it (bench only) |
-| `mgmt` / `mgmt reset` | show the managed configuration (bundle sequence, blacklist, profiles, TZ) / back to factory defaults (bench only) |
-| `uidmode key2` / `uidmode auto` | force the random-UID path (key 2 + `GetCardUID`) on fixed-UID cards / back to normal |
+| `log` | local event log (last 64 events: boot, open, deny + reason, admin, commission, time set) |
+| `mgmt` | managed configuration (bundle sequence, blacklist, profiles, TZ) |
 | `help` | |
+| *bench:* `time <unix-utc-seconds>` | set the time (rollback rule applies) |
+| *bench:* `time reset-hwm` | forget the high-water mark and the time |
+| *bench:* `state factory` | unsigned decommission: wipe site data → FACTORY (device key pair kept); commission again |
+| *bench:* `log clear` / `mgmt reset` | clear the log / empty managed configuration |
+| *bench:* `uidmode key2` / `uidmode auto` | force the random-UID path (key 2 + `GetCardUID`) on fixed-UID cards / back to normal |
 
 **Test cards:** write any example user onto a DESFire dev card with
 [`examples/hospital/write_test_card.py`](../examples/hospital/write_test_card.py).

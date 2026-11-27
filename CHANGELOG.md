@@ -38,6 +38,13 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw: **no keys in the firmware any more** — built-in dev site removed
+  (`OC_DEV_BUILTIN_SITE`); a flashed lock starts FACTORY and gets site keys,
+  door, zones and managed configuration only by commissioning; empty managed
+  defaults (UTC, no profiles, no blacklist).
+- fw: bench serial commands (time set, state factory, mgmt reset, log clear,
+  uidmode) only with `OC_BENCH_COMMANDS`; new `xiao-c3-prod` env without
+  them; `state owned` removed (OWNED only via commissioning).
 - fw + examples: reassignment and decommissioning — targeted signed
   bundles with records 0x31 (new door / zones, stays OWNED) and 0x40
   (wipe site data -> FACTORY; device key pair, event log kept); records

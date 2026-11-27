@@ -1,8 +1,8 @@
 # Knob mock-up
 
 Parametric OpenSCAD model of the outer knob (option A in
-[`../../knob-electronics.md`](../../knob-electronics.md)): Ø 34 × 42 mm shell,
-plastic cap, Ø 28 mm antenna PCB + ferrite + main PCB, CR2 battery off-centre
+[`../../knob-electronics.md`](../../knob-electronics.md)): Ø 38 × 42 mm shell,
+plastic cap, Ø 32 mm antenna PCB + ferrite + main PCB, CR2 battery off-centre
 with a Ø 6 mm micro gear motor beside it, clutch zone and shaft at the rear.
 
 Length budget (z from the cap): cap 2.5 · antenna PCB 0.8 · ferrite 0.3 ·
@@ -12,7 +12,7 @@ inside the wall and not colliding, battery and motor clear of the tabs).
 
 Assembly from the front: battery + motor, main PCB (rests on three tabs
 behind it), spacer ring, ferrite, antenna PCB, cap (clamps the stack).
-Main-PCB components stay inside r = 13 mm (tabs and ring at the rim).
+Main-PCB components stay inside r = 15 mm (tabs and ring at the rim).
 
 ```
 sudo apt install openscad

@@ -238,3 +238,6 @@ platformio_local*.ini
 
 # Encoder site database (per installation)
 examples/hospital/locks.local.json
+
+# Third-party photos (copyright of their owners) - local reference only
+hardware/mechanics/prior-art/images-local/

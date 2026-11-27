@@ -15,15 +15,15 @@ part = "cutaway";        // "assembly", "cutaway", "shell", "cap", "spacer"
 $fn = 96;
 
 // --- knob ------------------------------------------------------------------
-knob_d     = 34;
+knob_d     = 38;                     // decision S1 (2026-11-27)
 knob_l     = 42;
 wall       = 2;
-inner_d    = knob_d - 2 * wall;      // 30
+inner_d    = knob_d - 2 * wall;      // 34
 cap_t      = 2.5;                    // plastic / translucent, never metal
 cap_lip    = 1.0;                    // ledge the cap sits on
 
 // --- boards & ferrite ------------------------------------------------------
-board_d    = 28;
+board_d    = 32;
 ant_t      = 0.8;                    // antenna PCB
 ferrite_t  = 0.3;
 main_t     = 1.0;                    // main PCB
@@ -54,7 +54,7 @@ z_clutch   = z_bat + bat_contact + bat_l;
 z_rear     = z_clutch + clutch_l;
 z_pcb_back = z_main + (main_env + main_t) / 2;  // rear face of the main PCB
 spacer_h   = (main_env - main_t) / 2;           // main PCB front face -> ferrite
-tab_r      = board_d / 2 - 1;                   // tabs reach in to r = 13 mm
+tab_r      = board_d / 2 - 1;                   // tabs reach in to r = 15 mm
 
 echo(str("rear wall thickness = ", rear_t, " mm (should be >= 1.5)"));
 assert(rear_t >= 1.5, "stack-up does not fit into knob_l");
@@ -83,7 +83,7 @@ module shell() {
     // Three tabs just behind the main PCB; it rests on them. Assembly from
     // the front: battery + motor (pass the tabs), main PCB, spacer ring,
     // ferrite, antenna PCB, cap (clamps the stack). Keep main-PCB components
-    // out of r > 13 mm (tabs behind, spacer ring in front).
+    // out of r > 15 mm (tabs behind, spacer ring in front).
     for (a = [0, 120, 240])
         rotate([0, 0, a]) translate([tab_r, -1.5, z_pcb_back])
             cube([inner_d / 2 - tab_r + 0.01, 3, 0.8]);

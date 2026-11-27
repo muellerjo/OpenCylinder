@@ -59,11 +59,11 @@ Typical electronic knob cylinders have knobs of **Ø 30–36 mm** and
 
 | Part | Size (target) | Notes |
 |---|---|---|
-| knob outer Ø | 34 mm | inner Ø ~30 mm with 2 mm wall |
+| knob outer Ø | 38 mm | inner Ø ~34 mm with 2 mm wall |
 | front cap | 2–3 mm, **plastic / glass** | the face must not be metal (shields the field) |
-| antenna PCB | **Ø 28 mm disc, 0.8 mm** | Ø 24 mm coil on the front, pads at the rim, ferrite sheet behind it |
-| ferrite sheet | Ø 28 mm, 0.1–0.3 mm | decouples the coil from metal behind it (battery, motor, knob body) |
-| main PCB | Ø 28 mm, 1.0 mm, components on both sides | ST25R3916, nRF54L15, motor driver, power |
+| antenna PCB | **Ø 32 mm disc, 0.8 mm** | Ø 24 mm coil on the front, pads at the rim, ferrite sheet behind it |
+| ferrite sheet | Ø 32 mm, 0.1–0.3 mm | decouples the coil from metal behind it (battery, motor, knob body) |
+| main PCB | Ø 32 mm, 1.0 mm, components on both sides | ST25R3916, nRF54L15, motor driver, power |
 | battery | CR2 (Ø 15.6 × 27 mm) or CR123A (Ø 17 × 34.5 mm) | centred, along the axis |
 | clutch + motor | Ø ≤ 16 mm sleeve at the rear | motor + worm + dog clutch, see `mechanics/clutch-design.md` |
 
@@ -75,12 +75,12 @@ prototype uses two.
 
 ## 3. Antenna (13.56 MHz, ST25R3916)
 
-- Circular spiral coil on the front of a Ø 28 mm PCB.
+- Circular spiral coil on the front of a Ø 32 mm PCB (larger coils, Ø 26–28 mm, now possible — H2 compares).
 - Target inductance **≈ 1 µH** (ST25R3916 works well with roughly 0.5–2 µH).
   Estimate (modified Wheeler, circular): **Ø 24 mm outer, 5 turns, 0.3 mm
   track, 0.3 mm gap → ≈ 1.0 µH** in air (`antenna/gen_coil.py`, footprint
   `antenna/Coil_NFC_D24mm_5T.kicad_mod`); the pads sit 1 mm outside the coil
-  at r ≈ 12.9 mm, inside the Ø 28 mm board. The ferrite sheet will raise L —
+  at r ≈ 12.9 mm, inside the board. The ferrite sheet will raise L —
   re-measure and adjust turns if needed.
 - Differential drive (RFO1/RFO2), EMC low-pass filter + matching network
   (series/parallel capacitors) on the main PCB next to the reader. Resonance
@@ -107,11 +107,13 @@ prototype uses two.
 
 1. **Option A** — everything (antenna, reader, nRF54L15, battery, clutch
    motor) in the outer knob, rotating as one unit.
-2. **Knob Ø 34 × 42 mm** (40 mm was too short once the CR2 contacts,
+2. **Knob Ø 38 × 42 mm**, boards Ø 32 mm (Ø 34 → 38 after comparing with the
+   U&Z CX6122, Ø 40 × 42.7 mm; 40 mm length was too short once the CR2 contacts,
    ~1.8 mm, are counted; mock-up in `mechanics/knob-mockup/`).
-3. **Battery CR2** (Ø 15.6 × 27 mm). Battery access: still open — from the
-   front (cap) is convenient but makes the cap a service opening on the
-   attack side; with the knob dismounted only is safer.
+3. **Battery 1 × CR2** (Ø 15.6 × 27 mm). Battery access: the outer shell is
+   locked from inside and released by the motor only for a card with the
+   battery-change right; the knob snaps onto the cylinder and is released
+   only with a disassembly right (`design-plan.md` §1, §3.4, §4.2).
 4. First prototype with **two boards** (antenna board + main board).
 
 Security consequences of option A:

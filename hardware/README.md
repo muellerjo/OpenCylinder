@@ -7,6 +7,8 @@ carries a board revision (`rev A`, `rev B`, …) on the silkscreen
 
 - `mechanics/clutch-design.md` — clutch / actuator concept and prior-art pool.
 - `knob-electronics.md` — knob electronics concept (architecture, dimension budget, antenna).
+- `design-plan.md` — detailed plan: housing, mechanics (clutch in the body), components, PCB, sequence H1–H8.
+- `mechanics/knob-mockup/` — OpenSCAD knob mock-up (Ø 38 × 42 mm).
 - `antenna/` — parametric NFC coil generator and KiCad footprint.
 
 ## Current bench setup

@@ -50,6 +50,7 @@ def main():
     ap.add_argument("--site", default=HERE / "site.json", type=Path)
     ap.add_argument("--slot", type=int, default=1)
     ap.add_argument("--quota", type=int, default=16, help="blocks of 32 bytes (default 16)")
+    ap.add_argument("--out", type=Path, help="with --grant: write the grant to this JSON file")
     ap.add_argument("--pm3", type=Path, default=Path.home() / "proxmark3" / "pm3")
     ap.add_argument("--port")
     args = ap.parse_args()
@@ -58,9 +59,13 @@ def main():
         site = json.loads(args.site.read_text())
         aid_wire = bytes.fromhex(site["site"]["aid"])[::-1]
         g = grant(aid_wire, args.slot, args.quota, 0x0B, 0x83, initial_key=bytes(16))
-        print(json.dumps({"site": site["site"]["name"], "aid": site["site"]["aid"],
-                          "dam_slot": args.slot, "quota_blocks": args.quota,
-                          "dam_auth_key": DAM_AUTH_KEY, **g}, indent=2))
+        doc = {"site": site["site"]["name"], "aid": site["site"]["aid"],
+               "dam_slot": args.slot, "quota_blocks": args.quota, "ks1": "0B", "ks2": "83",
+               "initial_key": "00" * 16, "dam_auth_key": DAM_AUTH_KEY, **g}
+        print(json.dumps(doc, indent=2))
+        if args.out:
+            args.out.write_text(json.dumps(doc, indent=2) + "\n")
+            print(f"\nGrant written to {args.out}")
         print("\nHand this to the site: it authenticates with the DAM auth key and sends\n"
               "C9 <part1>, then AF <enck><dammac>. The DAM MAC/ENC keys stay with the owner.")
         return

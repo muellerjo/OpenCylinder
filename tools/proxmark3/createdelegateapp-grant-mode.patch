@@ -1,0 +1,152 @@
+diff --git a/client/src/cmdhfmfdes.c b/client/src/cmdhfmfdes.c
+index 909c44a81..80002c449 100644
+--- a/client/src/cmdhfmfdes.c
++++ b/client/src/cmdhfmfdes.c
+@@ -4568,6 +4568,7 @@ static int CmdHF14ADesCreateDelegateApp(const char *Cmd) {
+                   "Create delegated application (CreateDelegatedApplication / 0xC9). Master key needs to be provided.",
+                   "Command is built from fields and sends two frames: C9 + AF continuation.\n"
+                   "Authentication is always performed with DAM key number 0x10.\n"
++                  "Grant mode: --enck/--dammac take the card owner's precomputed values (no DAM ENC/MAC keys needed).\n"
+                   "EncK and DAMMAC are calculated from supplied key material.\n"
+                   "\n"
+                   "Structured mode examples:\n"
+@@ -4603,6 +4604,8 @@ static int CmdHF14ADesCreateDelegateApp(const char *Cmd) {
+         arg_str0(NULL, "dstkey", "<hex>", "Initial delegated-app key (16 bytes for 2TDEA/AES, 24 bytes for 3TDEA)"),
+         arg_str0(NULL, "dstkeyver", "<hex>", "Initial delegated-app key version (1 hex byte, def: 00)"),
+         arg_lit0(NULL, "no-auth", "Execute without authentication"),
++        arg_str0(NULL, "enck",    "<hex>", "Precomputed EncK from the card owner (32 bytes) - grant mode, no DAM ENC/MAC keys needed"),
++        arg_str0(NULL, "dammac",  "<hex>", "Precomputed DAMMAC from the card owner (8 bytes) - grant mode"),
+         arg_param_end
+     };
+     CLIExecWithReturn(ctx, Cmd, argtable, false);
+@@ -4704,6 +4707,21 @@ static int CmdHF14ADesCreateDelegateApp(const char *Cmd) {
+ 
+     bool noauth = arg_get_lit(ctx, 25);
+ 
++    // Grant mode: the card owner computed EncK + DAMMAC; the site needs only
++    // the DAM auth key (--key) and never sees the DAM ENC/MAC keys.
++    uint8_t grant_enck[32] = {0};
++    int grant_enck_len = sizeof(grant_enck);
++    CLIGetHexWithReturn(ctx, 26, grant_enck, &grant_enck_len);
++    uint8_t grant_mac[8] = {0};
++    int grant_mac_len = sizeof(grant_mac);
++    CLIGetHexWithReturn(ctx, 27, grant_mac, &grant_mac_len);
++    bool grantmode = (grant_enck_len > 0 || grant_mac_len > 0);
++    if (grantmode && (grant_enck_len != 32 || grant_mac_len != 8)) {
++        PrintAndLogEx(ERR, "Grant mode needs --enck (32 bytes) and --dammac (8 bytes)");
++        CLIParserFree(ctx);
++        return PM3_EINVARG;
++    }
++
+     SetAPDULogging(APDULogging);
+     CLIParserFree(ctx);
+ 
+@@ -4740,17 +4758,17 @@ static int CmdHF14ADesCreateDelegateApp(const char *Cmd) {
+ 
+     int expecteddamkeylen = desfire_get_key_length(damalgo);
+ 
+-    if (damenclen != expecteddamkeylen) {
++    if (!grantmode && damenclen != expecteddamkeylen) {
+         PrintAndLogEx(ERR, "DAM ENC key must have exactly %d bytes for --algo %s", expecteddamkeylen, CLIGetOptionListStr(DesfireAlgoOpts, damalgo));
+         return PM3_EINVARG;
+     }
+ 
+-    if (mac_key_len != expecteddamkeylen) {
++    if (!grantmode && mac_key_len != expecteddamkeylen) {
+         PrintAndLogEx(ERR, "DAM MAC key must have exactly %d bytes for --algo %s", expecteddamkeylen, CLIGetOptionListStr(DesfireAlgoOpts, damalgo));
+         return PM3_EINVARG;
+     }
+ 
+-    if (dstkeylen == 0) {
++    if (!grantmode && dstkeylen == 0) {
+         PrintAndLogEx(ERR, "Initial delegated-app key is mandatory");
+         return PM3_EINVARG;
+     }
+@@ -4792,45 +4810,52 @@ static int CmdHF14ADesCreateDelegateApp(const char *Cmd) {
+     }
+ 
+     uint8_t keytype = (data[9] >> 6) & 0x03;
+-    int expecteddstkeylen = desfire_get_key_length(DesfireKeyTypeToAlgo(keytype));
++    uint8_t cryptogram[32] = {0};
++    uint8_t mac[8] = {0};
++    if (grantmode) {
++        memcpy(cryptogram, grant_enck, sizeof(cryptogram));
++        memcpy(mac, grant_mac, sizeof(mac));
++        PrintAndLogEx(INFO, "Grant mode: using precomputed EncK / DAMMAC from the card owner");
++    } else {
++        int expecteddstkeylen = desfire_get_key_length(DesfireKeyTypeToAlgo(keytype));
+ 
+-    if (dstkeylen != expecteddstkeylen) {
+-        PrintAndLogEx(ERR, "Initial delegated-app key length must be %d bytes for key type 0x%02x (got %d)", expecteddstkeylen, keytype, dstkeylen);
+-        return PM3_EINVARG;
+-    }
++        if (dstkeylen != expecteddstkeylen) {
++            PrintAndLogEx(ERR, "Initial delegated-app key length must be %d bytes for key type 0x%02x (got %d)", expecteddstkeylen, keytype, dstkeylen);
++            return PM3_EINVARG;
++        }
+ 
+-    uint8_t cryptogram[32] = {0};
+-    uint8_t cryptogram_plain[32] = {0};
+-    // Delegated app key blob format:
+-    // 7-byte random prefix + dst key + dst key version, then zero padding to 32 bytes.
+-    for (size_t i = 0; i < 7; i++) {
+-        cryptogram_plain[i] = (uint8_t)(rand() & 0xFF);
+-    }
+-    memcpy(&cryptogram_plain[7], dstkey, dstkeylen);
+-    cryptogram_plain[7 + dstkeylen] = dstkeyver & 0xFF;
+-
+-    DesfireContext_t damctx = {0};
+-    DesfireSetKey(&damctx, 0, damalgo, damenc);
+-    uint8_t cryptogram_iv[DESFIRE_MAX_CRYPTO_BLOCK_SIZE] = {0};
+-    DesfireCryptoEncDecEx(&damctx, DCOMainKey, cryptogram_plain, sizeof(cryptogram_plain), cryptogram, true, true, cryptogram_iv);
+-
+-    uint8_t mac_input[1 + DESFIRE_TX_FRAME_MAX_LEN + sizeof(cryptogram)] = {0};
+-    size_t mac_input_len = 1 + datalen + sizeof(cryptogram);
+-    mac_input[0] = MFDES_CREATE_DELEGATE_APP;
+-    memcpy(&mac_input[1], data, datalen);
+-    memcpy(&mac_input[1 + datalen], cryptogram, sizeof(cryptogram));
++        uint8_t cryptogram_plain[32] = {0};
++        // Delegated app key blob format:
++        // 7-byte random prefix + dst key + dst key version, then zero padding to 32 bytes.
++        for (size_t i = 0; i < 7; i++) {
++            cryptogram_plain[i] = (uint8_t)(rand() & 0xFF);
++        }
++        memcpy(&cryptogram_plain[7], dstkey, dstkeylen);
++        cryptogram_plain[7 + dstkeylen] = dstkeyver & 0xFF;
+ 
+-    uint8_t mac[8] = {0};
+-    uint8_t fullcmac[DESFIRE_MAX_CRYPTO_BLOCK_SIZE] = {0};
+-    DesfireSetKey(&damctx, 0, damalgo, mac_key);
+-    DesfireClearIV(&damctx);
+-    DesfireCryptoCMACEx(&damctx, DCOMainKey, mac_input, mac_input_len, 0, fullcmac);
+-    if (damalgo == T_AES) {
+-        for (size_t i = 0; i < sizeof(mac); i++) {
+-            mac[i] = fullcmac[i * 2 + 1];
++        DesfireContext_t damctx = {0};
++        DesfireSetKey(&damctx, 0, damalgo, damenc);
++        uint8_t cryptogram_iv[DESFIRE_MAX_CRYPTO_BLOCK_SIZE] = {0};
++        DesfireCryptoEncDecEx(&damctx, DCOMainKey, cryptogram_plain, sizeof(cryptogram_plain), cryptogram, true, true, cryptogram_iv);
++
++        uint8_t mac_input[1 + DESFIRE_TX_FRAME_MAX_LEN + sizeof(cryptogram)] = {0};
++        size_t mac_input_len = 1 + datalen + sizeof(cryptogram);
++        mac_input[0] = MFDES_CREATE_DELEGATE_APP;
++        memcpy(&mac_input[1], data, datalen);
++        memcpy(&mac_input[1 + datalen], cryptogram, sizeof(cryptogram));
++
++        uint8_t fullcmac[DESFIRE_MAX_CRYPTO_BLOCK_SIZE] = {0};
++        DesfireSetKey(&damctx, 0, damalgo, mac_key);
++        DesfireClearIV(&damctx);
++        DesfireCryptoCMACEx(&damctx, DCOMainKey, mac_input, mac_input_len, 0, fullcmac);
++        if (damalgo == T_AES) {
++            for (size_t i = 0; i < sizeof(mac); i++) {
++                mac[i] = fullcmac[i * 2 + 1];
++            }
++        } else {
++            memcpy(mac, fullcmac, sizeof(mac));
+         }
+-    } else {
+-        memcpy(mac, fullcmac, sizeof(mac));
++
+     }
+ 
+     memcpy(contdata, cryptogram, sizeof(cryptogram));

@@ -38,6 +38,20 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- examples + tools: clean DAM role separation — the card owner writes a grant
+  file (`dam_setup.py --grant --out`), the site creates its application with
+  only the grant and the DAM auth key (`write_test_card.py --dam SLOT
+  --grant FILE`); Proxmark3 client patch `tools/proxmark3/` adds
+  `--enck/--dammac` to `createdelegateapp`. Verified on a DESFire EV3.
+- hw: knob electronics concept (`hardware/knob-electronics.md`) — the
+  rotating knob decides the architecture (options A/B/C, recommendation A:
+  everything in the outer knob), dimension budget (Ø 34 × 40 mm knob, Ø 28 mm
+  boards, CR2/CR123A, clutch sleeve), antenna and board split; parametric
+  13.56 MHz coil generator `hardware/antenna/gen_coil.py` (modified Wheeler)
+  with a Ø 24 mm / 5-turn / ~1.0 µH KiCad footprint (not yet checked in KiCad).
+- docs: production path — nRF54L15 decided; milestones M1–M7, platform
+  port (RFAL, PSA Crypto + hardware key storage, Zephyr), power budget,
+  shopping list (`docs/production-path.md`).
 - examples: several independent sites on one card via DESFire EV2/EV3 DAM —
   `dam.py` (owner's grant: EncK, DAMMAC; verified against the Proxmark trace),
   `dam_setup.py` (DAM keys, grant), `write_test_card.py --dam SLOT`

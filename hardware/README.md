@@ -6,12 +6,14 @@ carries a board revision (`rev A`, `rev B`, …) on the silkscreen
 (see `../docs/versioning.md`).
 
 - `mechanics/clutch-design.md` — clutch / actuator concept and prior-art pool.
+- `knob-electronics.md` — knob electronics concept (architecture, dimension budget, antenna).
+- `antenna/` — parametric NFC coil generator and KiCad footprint.
 
 ## Current bench setup
 
 - MCU (dev): ESP32-C3 SuperMini or Seeed XIAO ESP32C3
 - NFC frontend: ST25R3916 (M5Stack Unit NFC, I2C over Grove)
-- Production MCU (later): nRF52 (radio off) or STM32L5/U5
+- Production MCU: **nRF54L15** (plan: [`../docs/production-path.md`](../docs/production-path.md))
 
 ## Antenna & RF — first bench observation (2026-11-23)
 

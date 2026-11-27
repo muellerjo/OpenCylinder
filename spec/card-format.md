@@ -205,10 +205,13 @@ sites; EV1 for development and single-site use.
 4. **Locks need nothing new:** a lock selects its own site AID and never sees
    how an application was created.
 
-Bench note: the Proxmark3 `hf mfdes createdelegateapp` computes the grant
-itself from the DAM MAC/ENC keys, i.e. it plays owner and site at once;
-`examples/hospital/dam.py` is the owner's computation alone (verified to give
-the same DAMMAC as the Proxmark, which the card accepted).
+Bench tooling: `examples/hospital/dam_setup.py --grant --out FILE` is the
+owner's side (computes the grant with `examples/hospital/dam.py`, verified
+against the Proxmark3 implementation); `write_test_card.py --dam SLOT --grant
+FILE` is the site's side and passes only the grant and the DAM auth key to the
+Proxmark3 (`hf mfdes createdelegateapp --enck --dammac`, a small client patch
+in `tools/proxmark3/`). Verified on a DESFire EV3: the site created its
+application without ever holding the owner's DAM ENC/MAC keys.
 
 ### Privacy
 

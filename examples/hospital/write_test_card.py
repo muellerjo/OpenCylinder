@@ -47,7 +47,7 @@ def step(desc, cmd, expect="ok", verify_hex=None):
     return {"desc": desc, "cmd": cmd, "expect": expect, "verify": verify_hex}
 
 
-def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input, dam_slot=None):
+def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input, dam_slot=None, dam_grant=None):
     auth0 = f"-n 0 -t aes -k {k0_card}"
     auth1 = f"-n 1 -t aes -k {k1_card}"
     auth2 = f"-n 2 -t aes -k {K2_UID}"
@@ -65,15 +65,17 @@ def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input, dam_slot=No
         ]
     else:
         # DAM (EV2/EV3): no format — other sites' applications stay. The card
-        # owner's DAM keys must be set (dam_setup.py). Bench: the Proxmark
-        # computes the owner's grant (EncK, DAMMAC) from the owner's DAM keys,
-        # i.e. it plays both roles; dam.py shows the owner's computation alone.
-        from dam import DAM_AUTH_KEY, DAM_ENC_KEY, DAM_MAC_KEY
+        # owner's DAM keys must be set (dam_setup.py). The site uses ONLY the
+        # owner's grant (EncK, DAMMAC) and the DAM auth key — never the owner's
+        # DAM ENC/MAC keys (needs the Proxmark client with --enck/--dammac).
+        g = dam_grant
+        quota = int(g["quota_blocks"])
         create = [
-            step(f"A2  create DELEGATED application {aid} (DAM slot {dam_slot}, quota 16 blocks)",
+            step(f"A2  create DELEGATED application {aid} (DAM slot {dam_slot}, quota {quota} "
+                 "blocks) with the owner's grant",
                  f"hf mfdes createdelegateapp --aid {aid} --damslot {dam_slot:04X} --damslotver 00 "
-                 f"--quota 0010 --ks1 0B --dstalgo aes --numkeys 3 -t 2TDEA -k {DAM_AUTH_KEY} "
-                 f"--damenckey {DAM_ENC_KEY} --dammackey {DAM_MAC_KEY} --dstkey {ZERO} --dstkeyver 00"),
+                 f"--quota {quota:04X} --ks1 {g['ks1']} --ks2 {g['ks2']} -t 2TDEA -k {g['dam_auth_key']} "
+                 f"--enck {g['enck']} --dammac {g['dammac']}"),
         ]
     s = create + [
         step("A3  set key 1 (site read key, diversified)", chkey(1, k1_card)),
@@ -165,6 +167,8 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="only print the commands")
     ap.add_argument("--uid", help="card UID for --dry-run (hex, 7 bytes)")
     ap.add_argument("--yes", action="store_true", help="don't ask before formatting the card")
+    ap.add_argument("--grant", type=Path, help="with --dam: the card owner's grant (dam_setup.py "
+                    "--grant --out FILE); default: compute it here (bench: acting as owner)")
     ap.add_argument("--dam", type=int, metavar="SLOT",
                     help="EV2/EV3: create the application DELEGATED in this DAM slot instead of "
                          "formatting the card (other sites' applications stay; see dam_setup.py)")
@@ -194,7 +198,22 @@ def main():
     m = opencylinder_input(uid, aid_wire)
     k0_card = diversify(bytes.fromhex(K0_ISSUER_MASTER), m).hex().upper()
     k1_card = diversify(bytes.fromhex(K1_READ_MASTER), m).hex().upper()
-    steps = build_steps(aid, file0, file1_used, k0_card, k1_card, m.hex().upper(), args.dam)
+    dam_grant = None
+    if args.dam is not None:
+        if args.grant:
+            dam_grant = json.loads(args.grant.read_text())
+            if dam_grant["aid"].upper() != aid.upper() or int(dam_grant["dam_slot"]) != args.dam:
+                sys.exit(f"grant is for AID {dam_grant['aid']} slot {dam_grant['dam_slot']}, "
+                         f"not {aid} slot {args.dam}")
+            print(f"Using the card owner's grant from {args.grant.name} (no DAM ENC/MAC keys here)")
+        else:
+            from dam import DAM_AUTH_KEY, grant
+            dam_grant = {"aid": aid, "dam_slot": args.dam, "quota_blocks": 16, "ks1": "0B",
+                         "ks2": "83", "dam_auth_key": DAM_AUTH_KEY,
+                         **grant(bytes.fromhex(aid)[::-1], args.dam, 16, 0x0B, 0x83, bytes(16))}
+            print("No --grant given: computing the owner's grant here (bench: acting as card owner)")
+    steps = build_steps(aid, file0, file1_used, k0_card, k1_card, m.hex().upper(), args.dam,
+                        dam_grant)
 
     print(f"Card for {user['name']} (credential {user['credential_id']}), site AID {aid}")
     print(f"  card UID {uid.hex(' ').upper()}  ->  diversification input {m.hex(' ').upper()}")

@@ -196,7 +196,10 @@ itself within a quota the card owner granted:
 
 ```
 python3 dam_setup.py --format                     # card owner: DAM keys (once per card)
-python3 dam_setup.py --grant --site ../ems-station/site.json --slot 1   # owner-side grant only
+python3 dam_setup.py --grant --site ../ems-station/site.json --slot 1 --out ~/grant-ems.json
+                                                  # card owner: grant for one site
+python3 write_test_card.py --dam 1 --site ../ems-station/site.json --user 9002 --grant ~/grant-ems.json
+                                                  # site: create its app with the grant only
 python3 write_test_card.py --dam 2 --user 2001    # hospital creates its app (slot 2)
 python3 write_test_card.py --dam 1 --site ../ems-station/site.json --user 9001   # EMS (slot 1)
 ```
@@ -204,6 +207,9 @@ python3 write_test_card.py --dam 1 --site ../ems-station/site.json --user 9001  
 A lock commissioned for the hospital reads only the hospital application; the
 same lock commissioned for the EMS station (`write_commissioning_card.py
 --site ../ems-station/site.json --door 2`) reads only the EMS application.
+With `--grant` the site never sees the owner's DAM ENC/MAC keys (needs the
+Proxmark3 client patch in [`../../tools/proxmark3/`](../../tools/proxmark3/));
+without it the script computes the grant itself (bench shortcut).
 Site keys live in each site's `site.json` under `dev_keys` (public bench test
 keys; [`sitekeys.py`](sitekeys.py)).
 

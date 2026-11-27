@@ -137,10 +137,14 @@ A Euro-profile cylinder can only be removed with the door **open**: the fixing
 screw sits in the door edge, covered by the frame when the door is closed.
 The reset hangs off that property.
 
-1. **Internal reset pads on the inner PCB**, only reachable with the cylinder
-   removed. **No externally visible reset hole** — a router-style pinhole would
-   invite DoS (anyone bricks the lock with a paper clip). Electronics and reset
-   live on the inside, never in the outer knob.
+1. **Internal reset pads**, only reachable with the cylinder removed. **No
+   externally visible reset hole** — a router-style pinhole would invite DoS
+   (anyone bricks the lock with a paper clip). Since the electronics sit in the
+   outer knob (decision 2026-11-27, `hardware/knob-electronics.md`), the pads
+   are on the **back** of the main board (shaft side), never under the cap,
+   and the knob cannot be detached from outside while the cylinder is
+   mounted — so reaching them still requires the door open and the cylinder
+   removed.
 2. **Defence in depth:** normally a reset requires the admin key *and* physical
    access. Only on genuine admin-key loss does it fall back to a purely physical
    wipe. Since reset = denial, the residual risk is DoS/vandalism, not entry.

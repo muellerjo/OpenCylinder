@@ -100,7 +100,7 @@ Components are versioned independently — see
 | Stage | MCU | NFC |
 |-------|-----|-----|
 | Development | ESP32-C3 (SuperMini / Seeed XIAO) | ST25R3916 (M5Stack Unit NFC) |
-| Battery device | nRF52 (radio off) or STM32L5/U5 — decided at port time | ST25R3916 |
+| Battery device | **nRF54L15** (decided 2026-11-27; offline variant without radio code, optional online variant) — [`docs/production-path.md`](docs/production-path.md) | ST25R3916 |
 
 Firmware is layered (e.g. `IDesfireTransport`, portable mbedTLS) so the port
 swaps transport and crypto backends, not the logic.

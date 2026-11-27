@@ -36,9 +36,18 @@ class Esp32Clock : public IClock {
     raiseHighWater(unixUtc);
   }
 
-  // Set the time only if the rollback rule allows it.
-  bool trySet(uint32_t unixUtc) {
-    if (!timeUpdateAllowed(unixUtc, highWater_)) return false;
+  // Set the time only if the rollback rule allows it. The reference is the
+  // later of the stored high-water mark and the running clock: the mark is
+  // only written every 10 minutes, so comparing against it alone would let an
+  // old bundle turn the clock back by up to 10 + 5 minutes.
+  // `forwardOnly`: stale bundles (sequence not newer) may only move the clock
+  // forward — a backward correction needs a fresh bundle.
+  bool trySet(uint32_t unixUtc, bool forwardOnly = false) {
+    uint32_t reference = highWater_;
+    uint32_t now = 0;
+    if (this->now(now) && now > reference) reference = now;
+    if (forwardOnly && set_ && unixUtc < now) return false;
+    if (!timeUpdateAllowed(unixUtc, reference)) return false;
     set(unixUtc);
     return true;
   }

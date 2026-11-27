@@ -38,6 +38,10 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
   time-unknown/error patterns, non-blocking PWM).
 - spec: admin-card.md draft (separate admin application, TLV payload,
   anti-replay sequence, lock-unique transport key) — open decisions marked.
+- fw: rollback rule compares against the later of the high-water mark and
+  the running clock (the mark is only written every 10 min, so old bundles
+  could turn the clock back by up to 15 min); stale bundles may only move the
+  clock forward. Verified on the bench.
 - fw: **no keys in the firmware any more** — built-in dev site removed
   (`OC_DEV_BUILTIN_SITE`); a flashed lock starts FACTORY and gets site keys,
   door, zones and managed configuration only by commissioning; empty managed

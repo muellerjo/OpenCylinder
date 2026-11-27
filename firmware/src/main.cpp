@@ -420,11 +420,12 @@ Outcome handleAdminCard(m5::nfc::a::PICC& picc, DesfireAuth& card) {
 
   // Time sync whenever the signature was valid (also for a stale sequence).
   if (st == BundleStatus::Applied || st == BundleStatus::StaleSequence) {
-    if (lockClock.trySet(sum.issuedAt)) {
+    // A stale bundle may only move the clock forward (backlog 2b).
+    if (lockClock.trySet(sum.issuedAt, st == BundleStatus::StaleSequence)) {
       printTime("ADMIN time set to ", sum.issuedAt);
       eventLog.add(EventType::TimeSet, 2, sum.issuedAt, sum.issuedAt);
     }
-    else printTime("ADMIN time NOT set (rollback) - high-water mark ", lockClock.highWater());
+    else Serial.println("ADMIN time NOT adopted (would turn the clock back: stale bundle or rollback rule)");
   }
   if (st != BundleStatus::Applied) {
     Serial.printf("ADMIN bundle not applied: %s\n", toString(st));

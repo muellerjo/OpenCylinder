@@ -97,9 +97,13 @@ Time rules:
 2. **Only authenticated admin cards set the clock.** (Dev boards additionally
    accept a serial `time` command; production firmware does not.)
 3. **No rollback.** The lock keeps a *high-water mark* in non-volatile storage:
-   the latest time it has ever accepted. A new time earlier than the mark
-   (beyond a few minutes' tolerance) is rejected — otherwise an old admin card
-   could turn the clock back and revive expired cards.
+   the latest time it has ever accepted. A new time more than 5 minutes
+   earlier than the **later of the mark and the running clock** is rejected —
+   otherwise an old admin card could turn the clock back and revive expired
+   cards. (The mark is only written every 10 minutes, so the running clock must
+   count too.) A **stale** bundle (sequence not newer than the last applied)
+   may only move the clock **forward**; backward corrections need a fresh
+   bundle.
 4. **Time unknown** (e.g. battery changed without RTC backup, or never set):
    - cards **with** an expiry (`valid_until != 0`) are **rejected**;
    - cards **without** expiry (`valid_until == 0`) are still accepted

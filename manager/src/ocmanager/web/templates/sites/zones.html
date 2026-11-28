@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Zones</h1>
+<p class="muted">A zone groups doors. A card with a zone entry opens every door of that zone — also doors added later.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th class="num">No.</th><th>Name</th><th>Doors</th><th></th></tr></thead>
+  <tbody>{% for z in site.zones %}<tr>
+    <td class="num mono">{{ z.number }}</td>
+    <td>{% if ctx.can("site.write") %}<form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/zones/{{ z.id }}" class="row">{{ m.csrf_field() }}<input name="name" value="{{ z.name }}" required><button class="secondary">Save</button></form>{% else %}{{ z.name }}{% endif %}</td>
+    <td>{% for d in z.doors %}{{ d.number }} {{ d.name }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">—</span>{% endfor %}</td>
+    <td>{% if ctx.can("site.write") %}{{ m.post_button("/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/zones/" ~ z.id ~ "/delete", "Delete", "danger", "Delete zone " ~ z.number ~ "?") }}{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="4" class="muted">No zones.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ctx.can("site.write") %}
+<div class="panel"><h2 class="mt0">New zone</h2>
+<form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/zones" class="row">{{ m.csrf_field() }}
+  <div><label>Number (fixed)</label><input type="number" name="number" min="1" max="65535" required class="w-num" value="{{ (site.zones|map(attribute='number')|max or 0) + 1 }}"></div>
+  <div><label>Name</label><input name="name" required></div><button>Add</button></form></div>
+{% endif %}
+{% endblock %}

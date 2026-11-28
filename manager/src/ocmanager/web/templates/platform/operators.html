@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Accounts</h1>
+<div class="tablewrap"><table>
+  <thead><tr><th>User</th><th>Name</th><th>Tenants</th><th>Last login</th><th>Active / reset password</th></tr></thead>
+  <tbody>{% for o in rows %}<tr>
+    <td class="mono">{{ o.username }}{% if o.is_platform_admin %} <span class="badge warn">platform admin</span>{% endif %}</td>
+    <td>{{ o.display_name }}</td>
+    <td>{% for mb in o.memberships %}{{ mb.tenant.slug }} <span class="muted">({{ mb.role }})</span>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+    <td>{{ o.last_login_at.strftime("%Y-%m-%d %H:%M") if o.last_login_at else "never" }}</td>
+    <td><form method="post" action="/platform/operators/{{ o.id }}" class="row">{{ m.csrf_field() }}
+      <label class="checks"><span><input type="checkbox" name="active" value="1" {% if o.active %}checked{% endif %}> active</span></label>
+      <input type="password" name="password" placeholder="new password (optional)" autocomplete="new-password">
+      <button class="secondary">Save</button></form></td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+<div class="panel">
+  <h2 class="mt0">New account</h2>
+  <form method="post" action="/platform/operators" class="row">{{ m.csrf_field() }}
+    <div><label>User name</label><input name="username" required></div>
+    <div><label>Display name</label><input name="display_name"></div>
+    <div><label>Initial password (min. 10)</label><input type="password" name="password" minlength="10" required autocomplete="new-password"></div>
+    <label class="checks"><span><input type="checkbox" name="platform_admin" value="1"> platform admin</span></label>
+    <button>Create</button>
+  </form>
+</div>
+{% endblock %}

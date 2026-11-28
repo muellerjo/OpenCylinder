@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Locks</h1>
+<p class="muted">Locks are offline. The manager records what it issued for each lock; confirm after the tap.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Device ID</th><th>Label</th><th>Door</th><th>State</th><th>Last sequence</th></tr></thead>
+  <tbody>{% for lk in locks %}<tr>
+    <td class="mono"><a href="/t/{{ tenant.slug }}/s/{{ site.id }}/locks/{{ lk.id }}">{{ lk.device_id }}</a></td><td>{{ lk.label }}</td>
+    <td>{% if lk.door_number %}{{ lk.door_number }} {{ doors[lk.door_number].name if lk.door_number in doors else "?" }}{% else %}—{% endif %}</td>
+    <td>{{ m.state_badge(lk.state) }}</td><td class="mono small">{{ lk.last_sequence or "—" }}</td>
+  </tr>{% else %}<tr><td colspan="5" class="muted">No locks registered.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ctx.can("locks.manage") %}
+<div class="panel"><h2 class="mt0">Register a lock</h2>
+  <p class="muted small">QR text from the engraving, the lock's boot banner / <code>id</code> command, or an identify card.</p>
+  <form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/locks" class="row">{{ m.csrf_field() }}
+    <div><label>QR text</label><input name="qr" required class="mono" size="60" placeholder="OC1:0000AC276EFB0250:03…"></div>
+    <div><label>Label</label><input name="label" placeholder="bench XIAO"></div><button>Register</button></form></div>
+<details class="panel"><summary>Import locks.local.json (bench)</summary>
+  <form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/locks/import-local" enctype="multipart/form-data" class="row">{{ m.csrf_field() }}
+    <input type="file" name="file" accept=".json" required><button class="secondary">Import as commissioned</button></form></details>
+{% endif %}
+<p class="muted small">{% for k, v in states.items() %}<b>{{ k }}</b> {{ v }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+{% endblock %}

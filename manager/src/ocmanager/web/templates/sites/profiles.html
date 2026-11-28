@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% set DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"] %}
+{% macro profile_form(action, p=None) %}
+<form method="post" action="{{ action }}">{{ m.csrf_field() }}
+  <div class="row">
+    {% if not p %}<div><label>Number 1–255 (fixed)</label><input type="number" name="number" min="1" max="255" required class="w-num" value="{{ (site.profiles|map(attribute='number')|max or 0) + 1 }}"></div>{% endif %}
+    <div><label>Name</label><input name="name" value="{{ p.name if p else '' }}" required></div>
+  </div>
+  <label>Days</label><div class="checks">{% for d in DAYS %}<label><input type="checkbox" name="days[]" value="{{ d }}" {% if not p or d in p.days %}checked{% endif %}> {{ d }}</label>{% endfor %}</div>
+  <div class="row">{% for i in [1, 2] %}{% set iv = p.intervals[i-1] if p and p.intervals|length >= i else None %}
+    <div><label>Interval {{ i }} from</label><input name="from{{ i }}" class="w-time mono" placeholder="06:00" value="{{ iv['from'] if iv else ('06:00' if i == 1 and not p else '') }}"></div>
+    <div><label>to</label><input name="to{{ i }}" class="w-time mono" placeholder="20:00" value="{{ iv['to'] if iv else ('20:00' if i == 1 and not p else '') }}"></div>{% endfor %}
+    <button>{{ "Save" if p else "Add" }}</button>
+  </div>
+  <p class="muted small">Site-local time. "to" may be smaller than "from" for night shifts (the interval belongs to the day it starts). 24:00 = end of day.</p>
+</form>
+{% endmacro %}
+{% block content %}
+<h1>Time profiles</h1>
+<p class="muted">Cards carry only the profile number per entry (0 = always); the locks hold the definitions and receive changes with the next maintenance card.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th class="num">No.</th><th>Name</th><th>Days</th><th>Intervals</th><th></th></tr></thead>
+  <tbody>{% for p in site.profiles %}<tr>
+    <td class="num mono">{{ p.number }}</td><td>{{ p.name }}</td><td>{{ p.days|join(" ") }}</td>
+    <td class="mono">{% for iv in p.intervals %}{{ iv["from"] }}–{{ iv["to"] }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+    <td>{% if ctx.can("site.write") %}<details><summary>Edit</summary>{{ profile_form("/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/profiles/" ~ p.id, p) }}
+      {{ m.post_button("/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/profiles/" ~ p.id ~ "/delete", "Delete profile", "danger", "Delete profile " ~ p.number ~ "?") }}</details>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="5" class="muted">No profiles — all rights are "always".</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ctx.can("site.write") %}<div class="panel"><h2 class="mt0">New profile</h2>{{ profile_form("/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/profiles") }}</div>{% endif %}
+{% endblock %}

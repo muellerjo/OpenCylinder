@@ -1,0 +1,12 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Role {{ r.label }} <span class="muted mono">{{ r.key }}</span></h1>
+<p class="muted">Held by: {% for p in r.people %}<a href="/t/{{ tenant.slug }}/s/{{ site.id }}/people/{{ p.id }}">{{ p.name }}</a>{% if not loop.last %}, {% endif %}{% else %}nobody{% endfor %}</p>
+{% if ctx.can("site.write") %}
+<div class="panel"><form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/roles/{{ r.id }}">{{ m.csrf_field() }}
+  <div class="field"><label>Label</label><input name="label" value="{{ r.label }}" required></div>
+  {{ m.entries_editor(site, r.entries, 3) }}<button>Save</button></form>
+  <p class="muted small">Changing a role changes what <b>newly written</b> cards carry. Rewrite the holders' cards to apply it.</p></div>
+{{ m.post_button("/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/roles/" ~ r.id ~ "/delete", "Delete role", "danger", "Delete role " ~ r.key ~ "?") }}
+{% endif %}
+{% endblock %}

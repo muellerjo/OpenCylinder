@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Setup · OpenCylinder Manager{% endblock %}
+{% block body %}
+<div class="center">
+  <form class="panel login" method="post" action="/setup">
+    <div class="brand"><span class="dot"></span> OpenCylinder Manager — first start</div>
+    {% for kind, msg in messages %}<div class="flash {{ kind }}">{{ msg }}</div>{% endfor %}
+    <input type="hidden" name="csrf_token" value="{{ csrf }}">
+    <div class="field"><label>Your user name</label><input name="username" required autofocus autocomplete="username"></div>
+    <div class="field"><label>Password (min. 10)</label><input type="password" name="password" minlength="10" required autocomplete="new-password"></div>
+    <div class="field"><label>Organisation</label><input name="org" required value="My organisation"></div>
+    <p class="checks"><label><input type="checkbox" name="example" value="1" checked> load the example hospital (bench dev keys)</label></p>
+    <button>Start</button>
+  </form>
+</div>
+{% endblock %}

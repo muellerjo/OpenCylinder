@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+{% set base = "/t/" ~ tenant.slug ~ "/s/" ~ site.id %}
+<h1>Cards &amp; bundles</h1>
+{% if ctx.can("bundles.issue") %}
+<div class="panel"><h2 class="mt0">Maintenance card</h2>
+  <p class="muted small">Signed bundle for <b>every</b> lock of the site: time, blacklist, time profiles, TZ rule. Tap it on each lock (or let it travel on update points later).</p>
+  <form method="post" action="{{ base }}/cards/maintenance" class="row">{{ m.csrf_field() }}
+    <div><label>Valid (days)</label><input type="number" name="valid_days" value="2" step="0.5" min="0.1" max="30" class="w-num"></div>
+    <label class="checks"><span><input type="checkbox" name="blacklist_only" value="1"> blacklist only</span></label>
+    <button>Prepare</button></form>
+  <p class="muted small">User cards: from a person's page. Lock cards (commissioning, reassign, decommission): from a lock's page.</p>
+</div>
+{% endif %}
+<div class="tablewrap"><table>
+  <thead><tr><th>#</th><th>Kind</th><th>Summary</th><th>Status</th><th>Sequence</th><th>By</th><th>Created</th></tr></thead>
+  <tbody>{% for j in jobs %}<tr>
+    <td><a href="{{ base }}/cards/{{ j.id }}">{{ j.id }}</a></td><td>{{ kinds.get(j.kind, j.kind) }}</td><td>{{ j.summary }}</td>
+    <td>{{ m.state_badge(j.status) }}</td><td class="mono small">{{ j.sequence or "" }}</td><td>{{ j.created_by }}</td>
+    <td class="small">{{ j.created_at.strftime("%Y-%m-%d %H:%M") }}</td></tr>
+  {% else %}<tr><td colspan="7" class="muted">No card jobs yet.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

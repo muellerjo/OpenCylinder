@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Doors</h1>
+<p class="muted">One door = one lock position. The lock learns its door number and zones at commissioning.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th class="num">No.</th><th>Name</th><th>Zones</th><th>Lock</th><th></th></tr></thead>
+  <tbody>{% for d in site.doors %}<tr>
+    <td class="num mono">{{ d.number }}</td><td>{{ d.name }}</td>
+    <td>{% for z in d.zones %}<span class="badge">{{ z.number }} {{ z.name }}</span> {% else %}<span class="muted">individual access only</span>{% endfor %}</td>
+    <td>{% for lk in locks.get(d.number, []) %}<a class="mono small" href="/t/{{ tenant.slug }}/s/{{ site.id }}/locks/{{ lk.id }}">{{ lk.device_id }}</a> {{ m.state_badge(lk.state) }}{% else %}<span class="muted">—</span>{% endfor %}</td>
+    <td>{% if ctx.can("site.write") %}<details><summary>Edit</summary>
+      <form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/doors/{{ d.id }}">{{ m.csrf_field() }}
+        <div class="field"><label>Name</label><input name="name" value="{{ d.name }}" required></div>
+        <div class="checks">{% for z in site.zones %}<label><input type="checkbox" name="zones[]" value="{{ z.number }}" {% if z in d.zones %}checked{% endif %}> {{ z.number }} {{ z.name }}</label>{% endfor %}</div>
+        <p><button>Save</button></p></form>
+      {{ m.post_button("/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/doors/" ~ d.id ~ "/delete", "Delete door", "danger", "Delete door " ~ d.number ~ "?") }}
+    </details>{% endif %}</td>
+  </tr>{% else %}<tr><td colspan="5" class="muted">No doors.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ctx.can("site.write") %}
+<div class="panel"><h2 class="mt0">New door</h2>
+<form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/doors">{{ m.csrf_field() }}
+  <div class="row"><div><label>Number (fixed)</label><input type="number" name="number" min="1" max="65535" required class="w-num" value="{{ (site.doors|map(attribute='number')|max or 0) + 1 }}"></div>
+  <div><label>Name</label><input name="name" required></div></div>
+  <label>Zones</label><div class="checks">{% for z in site.zones %}<label><input type="checkbox" name="zones[]" value="{{ z.number }}"> {{ z.number }} {{ z.name }}</label>{% endfor %}</div>
+  <p><button>Add</button></p></form></div>
+{% endif %}
+{% endblock %}

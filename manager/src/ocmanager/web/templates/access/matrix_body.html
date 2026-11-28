@@ -1,0 +1,11 @@
+<p><b>{{ when }}</b></p>
+<div class="tablewrap"><table class="matrix">
+  <thead><tr><th>Person</th>{% for d in doors %}<th title="{{ d.name }}">{{ d.number }}</th>{% endfor %}</tr></thead>
+  <tbody>{% for r in rows %}<tr>
+    <td><a href="/t/{{ tenant.slug }}/s/{{ site.id }}/people/{{ r.person.id }}">{{ r.person.name }}</a>{% if r.credential %} <span class="muted small mono">{{ r.credential.number }}</span>{% endif %}</td>
+    {% if r.error %}<td colspan="{{ doors|length }}" class="muted small">{{ r.error }}</td>
+    {% else %}{% for sym, why in r.cells %}<td class="m-{{ sym }}" title="{{ why }}">{{ symbol[sym] }}</td>{% endfor %}{% endif %}
+  </tr>{% endfor %}</tbody>
+</table></div>
+<p class="small muted"><span class="m-open">✓</span> open · <span class="m-none">·</span> no right · <span class="m-profile">t</span> not at this time · <span class="m-expired">E</span> expired · <span class="m-blacklisted">B</span> blacklisted · <span class="m-notime">?</span> time unknown — hover a cell for the reason.</p>
+{% if doors|length < 20 %}<p class="small">{% for d in doors %}<span class="badge">{{ d.number }} {{ d.name }}</span> {% endfor %}</p>{% endif %}

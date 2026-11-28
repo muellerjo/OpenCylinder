@@ -1,0 +1,60 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+{% set base = "/t/" ~ tenant.slug ~ "/s/" ~ site.id %}
+<div class="spread"><h1>{{ p.name }}</h1>
+{% if p.active_credential and ctx.can("cards.issue") and "cards" in modules %}
+  <form method="post" action="{{ base }}/cards/user/{{ p.id }}" class="inline">{{ m.csrf_field() }}<button>Issue card {{ p.active_credential.number }}</button></form>
+{% endif %}</div>
+<p class="muted">{{ p.note }}</p>
+
+<div class="panel">
+  <h2 class="mt0">Cards (credentials)</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Credential</th><th>Status</th><th>UID</th><th>Last written</th><th>Card expiry</th><th></th></tr></thead>
+    <tbody>{% for c in p.credentials|reverse %}<tr>
+      <td class="mono">{{ c.number }}</td><td>{{ m.state_badge(c.status) }} <span class="muted small">{{ c.status_note }}</span></td>
+      <td class="mono small">{{ c.card_uid or "—" }}</td>
+      <td>{{ c.last_written_at.strftime("%Y-%m-%d %H:%M") if c.last_written_at else "never" }}</td>
+      <td>{{ "none" if c.card_valid_until == 0 else (c.card_valid_until or "—") }}</td>
+      <td>{% if ctx.can("people.write") %}
+        {% if c.status == "active" %}
+          <form method="post" action="{{ base }}/credentials/{{ c.id }}/status" class="row" data-confirm="Blacklist card {{ c.number }}? It stops working at each lock once a maintenance card has been tapped there.">{{ m.csrf_field() }}
+            <input type="hidden" name="status" value="blacklisted"><input name="note" placeholder="reason (lost, stolen …)"><button class="danger">Blacklist</button></form>
+          <form method="post" action="{{ base }}/credentials/{{ c.id }}/status" class="inline" data-confirm="Card {{ c.number }} returned and destroyed?">{{ m.csrf_field() }}
+            <input type="hidden" name="status" value="retired"><input type="hidden" name="note" value="returned"><button class="link">retire (card returned)</button></form>
+        {% endif %}{% endif %}</td>
+    </tr>{% else %}<tr><td colspan="6" class="muted">No card yet.</td></tr>{% endfor %}</tbody>
+  </table></div>
+  {% if ctx.can("people.write") and not p.active_credential %}
+  <form method="post" action="{{ base }}/people/{{ p.id }}/credentials" class="row">{{ m.csrf_field() }}
+    <div><label>Credential number (empty = next free)</label><input type="number" name="number" min="1" class="w-num"></div><button>New credential</button></form>
+  {% endif %}
+</div>
+
+{% if preview %}
+<div class="panel">
+  <h2 class="mt0">What the card will carry</h2>
+  <table>{% for e in preview.entries %}<tr><td>{{ "door" if e.kind == 1 else "zone" }} {{ e.target }}</td><td>{{ names["door" if e.kind == 1 else "zone"].get(e.target, "?") }}</td><td>{{ "profile " ~ e.profile if e.profile else "always" }}</td></tr>{% endfor %}</table>
+  <details><summary>Card bytes</summary><label>file 0 (header)</label><pre>{{ preview.file0 }}</pre><label>file 1 (access list, used part)</label><pre>{{ preview.file1 }}</pre></details>
+</div>
+{% elif preview_error %}<div class="flash error">{{ preview_error }}</div>{% endif %}
+
+{% if ctx.can("people.write") %}
+<div class="panel">
+  <h2 class="mt0">Rights</h2>
+  <form method="post" action="{{ base }}/people/{{ p.id }}">{{ m.csrf_field() }}
+    <div class="row">
+      <div><label>Name</label><input name="name" value="{{ p.name }}" required></div>
+      <div><label>Valid until (UTC)</label><input type="datetime-local" name="valid_until" value="{{ p.valid_until.strftime('%Y-%m-%dT%H:%M') if p.valid_until else '' }}"></div>
+      <div><label>Note</label><input name="note" value="{{ p.note }}"></div>
+    </div>
+    <label>Roles</label><div class="checks">{% for r in roles %}<label><input type="checkbox" name="roles[]" value="{{ r.key }}" {% if r in p.roles %}checked{% endif %}> {{ r.label }}</label>{% endfor %}</div>
+    <h3>Individual extras</h3>
+    {{ m.entries_editor(site, p.extras, 2) }}
+    <button>Save</button>
+  </form>
+</div>
+<details class="panel"><summary>Delete person</summary>
+  <p class="small">Only possible without active or blacklisted cards.</p>{{ m.post_button(base ~ "/people/" ~ p.id ~ "/delete", "Delete " ~ p.name, "danger", "Delete " ~ p.name ~ "?") }}</details>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Blacklist</h1>
+<p class="muted">What the locks receive with the next maintenance or blacklist card. An entry drops out by itself once the card it blocks has expired anyway — short card lifetimes keep this list small.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Credential</th><th>Person</th><th>Reason</th><th>Entry kept until</th></tr></thead>
+  <tbody>{% for r in rows %}<tr><td class="mono">{{ r.cred.number }}</td>
+    <td><a href="/t/{{ tenant.slug }}/s/{{ site.id }}/people/{{ r.cred.person_id }}">{{ r.cred.person.name }}</a></td>
+    <td class="muted">{{ r.cred.status_note }}</td><td>{{ r.until.strftime("%Y-%m-%d") if r.until else "for ever (card has no expiry)" }}</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">Empty.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if expired %}<p class="muted small">Blacklisted but expired (no longer sent): {% for c in expired %}<span class="mono">{{ c.number }}</span> {% endfor %}</p>{% endif %}
+{% if ctx.can("bundles.issue") and "cards" in modules %}<p><a class="btn" href="/t/{{ tenant.slug }}/s/{{ site.id }}/cards">Issue a maintenance / blacklist card →</a></p>{% endif %}
+{% endblock %}

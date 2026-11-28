@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>{{ tenant.name }}</h1>
+<p class="muted">A site is one DESFire application (AID) with its own keys. Most tenants have one; several sites can share a card (DAM).</p>
+<div class="grid">
+{% for s in site_list %}
+  <a class="panel" href="/t/{{ tenant.slug }}/s/{{ s.id }}">
+    <div class="spread"><b>{{ s.name }}</b>{% if s.dev_keys %}<span class="badge warn">dev keys</span>{% endif %}</div>
+    <div class="muted small mono">AID {{ s.aid }} · admin {{ s.admin_aid }}</div>
+    <div class="small">{{ s.doors|length }} doors · {{ s.zones|length }} zones · {{ s.profiles|length }} profiles</div>
+  </a>
+{% else %}<p class="muted">No sites yet.</p>{% endfor %}
+</div>
+{% if ctx.can("site.write") %}
+<div class="panel">
+  <h2 class="mt0">New site</h2>
+  <p class="muted small">Fresh random AES master keys and a new ECDSA P-256 management key are generated and sealed in the vault. They never appear in the UI or the API.</p>
+  <form method="post" action="/t/{{ tenant.slug }}/sites" class="row">{{ m.csrf_field() }}
+    <div><label>Name</label><input name="name" required></div>
+    <div><label>User AID (6 hex)</label><input name="aid" required pattern="[0-9A-Fa-f]{6}" class="w-num mono" placeholder="F51230"></div>
+    <div><label>Admin AID</label><input name="admin_aid" required pattern="[0-9A-Fa-f]{6}" class="w-num mono" placeholder="F51231"></div>
+    <div><label>Time zone</label><input name="timezone" value="Europe/Berlin"></div>
+    <div><label>POSIX TZ rule (for locks)</label><input name="posix_tz" value="CET-1CEST,M3.5.0,M10.5.0/3"></div>
+    <button>Create</button>
+  </form>
+</div>
+<div class="panel">
+  <h2 class="mt0">Import site.json</h2>
+  <p class="muted small">The format of <code>examples/*/site.json</code>: zones, doors, profiles, roles, users, blacklist. Without a PEM fresh keys are generated. With the example's <code>dev_management_key.pem</code> the <b>public dev test keys</b> are used, so existing bench cards and the bench lock keep working.</p>
+  <form method="post" action="/t/{{ tenant.slug }}/sites/import" enctype="multipart/form-data" class="row">{{ m.csrf_field() }}
+    <div><label>site.json</label><input type="file" name="file" accept=".json,application/json" required></div>
+    {% if settings.allow_dev_keys %}<div><label>dev_management_key.pem (bench only, optional)</label><input type="file" name="dev_pem" accept=".pem"></div>{% endif %}
+    <button>Import</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>People &amp; cards</h1>
+<form method="get" class="row" hx-get="/t/{{ tenant.slug }}/s/{{ site.id }}/people" hx-target="main" hx-select="main" hx-swap="outerHTML" hx-trigger="input changed delay:300ms from:#q, submit" hx-push-url="true">
+  <div><label for="q">Search name or credential number</label><input id="q" name="q" value="{{ q }}" autocomplete="off"></div>
+</form>
+<div class="tablewrap"><table>
+  <thead><tr><th>Name</th><th>Roles</th><th>Card</th><th>Valid until</th><th>Note</th></tr></thead>
+  <tbody>{% for p in people %}{% set c = p.active_credential %}<tr>
+    <td><a href="/t/{{ tenant.slug }}/s/{{ site.id }}/people/{{ p.id }}">{{ p.name }}</a></td>
+    <td>{% for r in p.roles %}<span class="badge">{{ r.label }}</span> {% endfor %}{% if p.extras %}<span class="badge">+{{ p.extras|length }} extra</span>{% endif %}</td>
+    <td>{% if c %}<span class="mono">{{ c.number }}</span> {% if c.last_written_at %}<span class="badge ok">written</span>{% else %}<span class="badge warn">not written</span>{% endif %}
+        {% else %}{% for x in p.credentials if x.status == "blacklisted" %}<span class="mono">{{ x.number }}</span> {{ m.state_badge("blacklisted") }} {% else %}<span class="muted">none</span>{% endfor %}{% endif %}</td>
+    <td>{{ p.valid_until.strftime("%Y-%m-%d") if p.valid_until else "—" }}</td>
+    <td class="muted small">{{ p.note }}</td>
+  </tr>{% else %}<tr><td colspan="5" class="muted">Nobody found.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ctx.can("people.write") %}
+<div class="panel"><h2 class="mt0">New person</h2>
+<form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/people">{{ m.csrf_field() }}
+  <div class="row">
+    <div><label>Name</label><input name="name" required></div>
+    <div><label>Valid until (UTC, optional)</label><input type="datetime-local" name="valid_until"></div>
+    <div><label>Note</label><input name="note"></div>
+  </div>
+  <label>Roles</label><div class="checks">{% for r in roles %}<label><input type="checkbox" name="roles[]" value="{{ r.key }}"> {{ r.label }}</label>{% else %}<span class="muted">no roles defined</span>{% endfor %}</div>
+  <p class="checks"><label><input type="checkbox" name="with_card" value="1" checked> create a credential (card number) now</label></p>
+  <button>Add</button>
+</form></div>
+{% endif %}
+{% endblock %}

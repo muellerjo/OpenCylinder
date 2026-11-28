@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Roles</h1>
+<p class="muted">A role is a template of rights. Roles exist only here — a card carries the resolved door/zone entries.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Key</th><th>Label</th><th>Entries</th><th class="num">People</th></tr></thead>
+  <tbody>{% for r in roles %}<tr>
+    <td class="mono"><a href="/t/{{ tenant.slug }}/s/{{ site.id }}/roles/{{ r.id }}">{{ r.key }}</a></td><td>{{ r.label }}</td>
+    <td>{% for e in r.entries %}<div class="small">{{ m.entry_label(e, names) }}</div>{% endfor %}</td><td class="num">{{ r.people|length }}</td>
+  </tr>{% else %}<tr><td colspan="4" class="muted">No roles.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if ctx.can("site.write") %}
+<div class="panel"><h2 class="mt0">New role</h2>
+<form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/roles">{{ m.csrf_field() }}
+  <div class="row"><div><label>Key (a-z, 0-9, -)</label><input name="key" required pattern="[a-z0-9][a-z0-9-]*"></div>
+  <div><label>Label</label><input name="label" required></div></div>
+  {{ m.entries_editor(site, [], 4) }}<button>Add</button>
+</form></div>
+{% endif %}
+{% endblock %}

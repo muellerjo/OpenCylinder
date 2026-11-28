@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ "Platform audit" if scope == "platform" else "Audit log" }}</h1>
+<form method="get" class="row"><div><label>Search</label><input name="q" value="{{ q }}" placeholder="action, target, user"></div><button class="secondary">Filter</button></form>
+<div class="tablewrap"><table>
+  <thead><tr><th>Time (UTC)</th><th>User</th><th>Action</th><th>Target</th><th>Detail</th><th>IP</th></tr></thead>
+  <tbody>{% for e in events %}<tr>
+    <td class="mono small">{{ e.at.strftime("%Y-%m-%d %H:%M:%S") }}</td><td>{{ e.operator_name }}</td>
+    <td><span class="badge {{ 'bad' if 'failed' in e.action or 'delete' in e.action else '' }}">{{ e.action }}</span></td>
+    <td>{{ e.target }}</td><td class="mono small">{% for k, v in e.detail.items() %}{{ k }}={{ v }} {% endfor %}</td><td class="mono small">{{ e.ip }}</td>
+  </tr>{% else %}<tr><td colspan="6" class="muted">No events.</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

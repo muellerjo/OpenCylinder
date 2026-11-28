@@ -1,0 +1,40 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+{% set base = "/t/" ~ tenant.slug ~ "/s/" ~ site.id %}
+<h1>Lock <span class="mono">{{ lk.device_id }}</span> {{ m.state_badge(lk.state) }}</h1>
+<p class="muted">{{ states[lk.state] }}</p>
+<div class="panel">
+  <p>Door: {% if lk.door_number %}<b>{{ lk.door_number }}</b>{% if zones_now is not none %}, zones now {{ zones_now }}{% endif %}{% else %}—{% endif %}
+   · last sequence <span class="mono">{{ lk.last_sequence or "—" }}</span>{% if lk.commissioned_at %} · confirmed {{ lk.commissioned_at.strftime("%Y-%m-%d %H:%M") }}{% endif %}</p>
+  <label>Identity (QR)</label><pre id="qr">{{ lk.qr }}</pre><button type="button" class="secondary" data-copy="#qr">Copy</button>
+</div>
+{% if ctx.can("locks.manage") %}
+  {% if lk.state in confirm %}
+  <div class="panel"><h2 class="mt0">Confirm the tap</h2><p>Did the lock accept the card (beep / log)?</p>
+    {{ m.post_button(base ~ "/locks/" ~ lk.id ~ "/confirm", "Yes — mark " ~ confirm[lk.state], "") }}</div>
+  {% endif %}
+  {% if ctx.can("bundles.issue") and "cards" in modules %}
+  <div class="panel"><h2 class="mt0">Cards for this lock</h2>
+    {% if lk.state in ("registered", "factory", "commissioning") %}
+    <form method="post" action="{{ base }}/cards/lock/{{ lk.id }}" class="row">{{ m.csrf_field() }}<input type="hidden" name="kind" value="commissioning">
+      <div><label>Commission to door</label><select name="door" required>{% for d in site.doors %}<option value="{{ d.number }}" {% if d.number == lk.door_number %}selected{% endif %}>{{ d.number }} · {{ d.name }} (zones {{ d.zone_numbers }})</option>{% endfor %}</select></div>
+      <div><label>Card valid (days)</label><input type="number" name="valid_days" value="2" step="0.5" min="0.1" max="30" class="w-num"></div>
+      <button>Prepare commissioning card</button></form>
+    <p class="muted small">Site keys are encrypted to this lock's public key — the card is useless for any other lock.</p>
+    {% endif %}
+    {% if lk.state in ("owned", "commissioning") %}
+    <form method="post" action="{{ base }}/cards/lock/{{ lk.id }}" class="row">{{ m.csrf_field() }}<input type="hidden" name="kind" value="reassign">
+      <div><label>Reassign to door (or same door, to refresh zones)</label><select name="door" required>{% for d in site.doors %}<option value="{{ d.number }}" {% if d.number == lk.door_number %}selected{% endif %}>{{ d.number }} · {{ d.name }} (zones {{ d.zone_numbers }})</option>{% endfor %}</select></div>
+      <div><label>Valid (days)</label><input type="number" name="valid_days" value="2" step="0.5" min="0.1" max="30" class="w-num"></div>
+      <button class="secondary">Prepare reassignment card</button></form>
+    <form method="post" action="{{ base }}/cards/lock/{{ lk.id }}" class="row" data-confirm="Prepare a DECOMMISSION card? Tapped on this lock it forgets the site and opens nothing until re-commissioned.">{{ m.csrf_field() }}<input type="hidden" name="kind" value="decommission">
+      <div><label>Valid (days)</label><input type="number" name="valid_days" value="1" step="0.5" min="0.1" max="30" class="w-num"></div>
+      <button class="danger">Prepare decommission card</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+  <div class="panel"><form method="post" action="{{ base }}/locks/{{ lk.id }}" class="row">{{ m.csrf_field() }}
+    <div><label>Label</label><input name="label" value="{{ lk.label }}"></div><div><label>Note</label><input name="note" value="{{ lk.note }}" size="40"></div><button class="secondary">Save</button></form></div>
+  {% if lk.state in ("registered", "factory") %}{{ m.post_button(base ~ "/locks/" ~ lk.id ~ "/delete", "Remove from registry", "danger", "Remove this lock?") }}{% endif %}
+{% endif %}
+{% endblock %}

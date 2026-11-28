@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<div class="spread"><h1>{{ site.name }}</h1><a class="btn secondary" href="/t/{{ tenant.slug }}/s/{{ site.id }}/export.json" hx-boost="false">Export site.json</a></div>
+<p class="muted mono">AID {{ site.aid }} · admin AID {{ site.admin_aid }} · {{ site.timezone }} · last bundle sequence {{ site.last_sequence or "—" }}</p>
+<div class="grid">
+  <a class="panel" href="/t/{{ tenant.slug }}/s/{{ site.id }}/zones"><div class="stat">{{ site.zones|length }}</div>zones</a>
+  <a class="panel" href="/t/{{ tenant.slug }}/s/{{ site.id }}/doors"><div class="stat">{{ site.doors|length }}</div>doors</a>
+  <a class="panel" href="/t/{{ tenant.slug }}/s/{{ site.id }}/profiles"><div class="stat">{{ site.profiles|length }}</div>time profiles</a>
+  {% if "people" in modules %}<a class="panel" href="/t/{{ tenant.slug }}/s/{{ site.id }}/people"><div class="stat">→</div>people &amp; cards</a>{% endif %}
+</div>
+<div class="panel">
+  <h2 class="mt0">Keys</h2>
+  {% if public_key %}
+    <p>Sealed in the vault: 5 AES-128 master keys (issuer, read, UID, admin issuer, admin read) and the management signing key.</p>
+    <label>Management public key (locks verify bundles with it)</label><pre id="pk">{{ public_key }}</pre>
+    <button type="button" class="secondary" data-copy="#pk">Copy</button>
+  {% else %}<p class="flash error">This site has no keys.</p>{% endif %}
+</div>
+{% if ctx.can("site.write") %}
+<div class="panel">
+  <h2 class="mt0">Settings</h2>
+  <form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/settings" class="row">{{ m.csrf_field() }}
+    <div><label>Name</label><input name="name" value="{{ site.name }}" required></div>
+    <div><label>Time zone</label><input name="timezone" value="{{ site.timezone }}"></div>
+    <div><label>POSIX TZ rule</label><input name="posix_tz" value="{{ site.posix_tz }}"></div>
+    <button>Save</button>
+  </form>
+  <p class="muted small">AIDs are fixed: issued cards and commissioned locks depend on them. A changed TZ rule reaches the locks with the next maintenance card.</p>
+</div>
+{% endif %}
+{% if ctx.can("members.manage") %}
+<details class="panel"><summary>Delete site</summary>
+  <p>Deletes the site with all people, locks and <b>its keys</b>. Cards and locks of this site can then never be managed again.</p>
+  <form method="post" action="/t/{{ tenant.slug }}/s/{{ site.id }}/delete" class="row">{{ m.csrf_field() }}
+    <div><label>Type the AID {{ site.aid }} to confirm</label><input name="confirm" class="mono"></div><button class="danger">Delete for ever</button></form>
+</details>
+{% endif %}
+{% endblock %}

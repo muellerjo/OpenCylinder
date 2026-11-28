@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Members of {{ tenant.name }}</h1>
+<div class="panel small">
+  <b>owner</b> everything incl. members ·
+  <b>admin</b> structure, locks, signed bundles, all cards ·
+  <b>operator</b> people and user cards ·
+  <b>auditor</b> read-only + audit log
+</div>
+<div class="tablewrap"><table>
+  <thead><tr><th>User</th><th>Role</th><th></th></tr></thead>
+  <tbody>{% for mb in rows %}<tr><td>{{ mb.operator.username }} <span class="muted">{{ mb.operator.display_name }}</span></td>
+    <td><form method="post" action="/t/{{ tenant.slug }}/members" class="row">{{ m.csrf_field() }}
+      <input type="hidden" name="username" value="{{ mb.operator.username }}">
+      <select name="role">{% for r in roles %}<option {% if r == mb.role %}selected{% endif %}>{{ r }}</option>{% endfor %}</select>
+      <button class="secondary">Change</button></form></td>
+    <td><form method="post" action="/t/{{ tenant.slug }}/members" class="inline" data-confirm="Remove {{ mb.operator.username }}?">{{ m.csrf_field() }}
+      <input type="hidden" name="username" value="{{ mb.operator.username }}"><input type="hidden" name="role" value="">
+      <button class="danger">Remove</button></form></td></tr>{% endfor %}</tbody>
+</table></div>
+<div class="panel"><h2 class="mt0">Add member</h2>
+  <form method="post" action="/t/{{ tenant.slug }}/members" class="row">{{ m.csrf_field() }}
+    <div><label>User name (existing account)</label><input name="username" required></div>
+    <div><label>Role</label><select name="role">{% for r in roles %}<option {% if r == "operator" %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+    <button>Add</button>
+  </form></div>
+{% endblock %}

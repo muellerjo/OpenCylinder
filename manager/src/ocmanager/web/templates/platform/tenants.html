@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Tenants</h1>
+<p class="muted">Each tenant is an isolated organisation with its own sites, keys, people and locks. Platform admins manage tenants and accounts; they see a tenant's data only as its member.</p>
+<div class="tablewrap"><table>
+  <thead><tr><th>Slug</th><th>Name</th><th>Members</th><th>Status</th><th>Add / change member</th></tr></thead>
+  <tbody>{% for t in rows %}<tr>
+    <td class="mono"><a href="/t/{{ t.slug }}">{{ t.slug }}</a></td><td>{{ t.name }}</td>
+    <td>{% for mb in t.memberships %}{{ mb.operator.username }} <span class="muted">({{ mb.role }})</span>{% if not loop.last %}, {% endif %}{% endfor %}</td>
+    <td><form method="post" action="/platform/tenants/{{ t.id }}/active" class="inline">{{ m.csrf_field() }}
+      {% if t.active %}<button class="secondary">Disable</button>{% else %}<input type="hidden" name="active" value="1"><button>Enable</button>{% endif %}</form></td>
+    <td><form method="post" action="/platform/tenants/{{ t.id }}/members" class="row">{{ m.csrf_field() }}
+      <select name="username">{% for o in operators %}<option>{{ o.username }}</option>{% endfor %}</select>
+      <select name="role">{% for r in roles %}<option>{{ r }}</option>{% endfor %}<option value="">(remove)</option></select>
+      <button class="secondary">Set</button></form></td>
+  </tr>{% else %}<tr><td colspan="5" class="muted">No tenants yet.</td></tr>{% endfor %}</tbody>
+</table></div>
+<div class="panel">
+  <h2 class="mt0">New tenant</h2>
+  <form method="post" action="/platform/tenants" class="row">{{ m.csrf_field() }}
+    <div><label>Slug (URL)</label><input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,47}" placeholder="st-example"></div>
+    <div><label>Name</label><input name="name" placeholder="St. Example Hospital"></div>
+    <div><label>Owner</label><select name="owner">{% for o in operators %}<option {% if o.id == op.id %}selected{% endif %}>{{ o.username }}</option>{% endfor %}</select></div>
+    <button>Create</button>
+  </form>
+</div>
+{% endblock %}

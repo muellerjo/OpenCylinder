@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Access matrix</h1>
+<p class="muted">The lock's decision logic run on each person's real card bytes, for every door — before any card is written.</p>
+<form method="get" class="row" hx-get="/t/{{ tenant.slug }}/s/{{ site.id }}/access" hx-target="#matrix" hx-trigger="change, submit" hx-push-url="true">
+  <div><label>Site-local time (empty = now)</label><input type="datetime-local" name="at" value="{{ at }}"></div>
+  <div><label>Door</label><select name="door"><option value="">all</option>{% for d in all_doors %}<option value="{{ d.number }}" {% if door == d.number|string %}selected{% endif %}>{{ d.number }} {{ d.name }}</option>{% endfor %}</select></div>
+  <label class="checks"><span><input type="checkbox" name="time_unknown" value="1" {% if time_unknown %}checked{% endif %}> lock lost its clock</span></label>
+  <button class="secondary">Show</button>
+</form>
+<div id="matrix">{% include "access/matrix_body.html" %}</div>
+{% endblock %}

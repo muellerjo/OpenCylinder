@@ -1,0 +1,42 @@
+{% macro csrf_field() %}<input type="hidden" name="csrf_token" value="{{ csrf }}">{% endmacro %}
+
+{% macro post_button(action, label, cls="secondary", confirm=None) %}
+<form method="post" action="{{ action }}" class="inline" {% if confirm %}data-confirm="{{ confirm }}"{% endif %}>
+  <input type="hidden" name="csrf_token" value="{{ csrf }}">
+  <button class="{{ cls }}">{{ label }}</button>
+</form>
+{% endmacro %}
+
+{% macro entry_label(e, names) -%}
+{{ e.kind }} {{ e.target }} <span class="muted">{{ names[e.kind].get(e.target, "?") }}</span>{% if e.profile %} <span class="badge warn">profile {{ e.profile }}</span>{% endif %}
+{%- endmacro %}
+
+{# rows of (target, profile) selects; existing entries + blank rows #}
+{% macro entries_editor(site, entries, blank=3) %}
+<table>
+  <thead><tr><th>Door / zone</th><th>Time profile</th></tr></thead>
+  <tbody>
+  {% for e in entries %}{{ entry_row(site, e.kind ~ ":" ~ e.target, e.profile) }}{% endfor %}
+  {% for _ in range(blank) %}{{ entry_row(site, "", 0) }}{% endfor %}
+  </tbody>
+</table>
+<p class="muted small">Empty rows are ignored. Clear a row to remove that right.</p>
+{% endmacro %}
+
+{% macro entry_row(site, sel, profile) %}
+<tr>
+  <td><select name="e_target[]">
+    <option value="">—</option>
+    <optgroup label="Zones">{% for z in site.zones %}<option value="zone:{{ z.number }}" {% if sel == "zone:" ~ z.number %}selected{% endif %}>zone {{ z.number }} · {{ z.name }}</option>{% endfor %}</optgroup>
+    <optgroup label="Doors">{% for d in site.doors %}<option value="door:{{ d.number }}" {% if sel == "door:" ~ d.number %}selected{% endif %}>door {{ d.number }} · {{ d.name }}</option>{% endfor %}</optgroup>
+  </select></td>
+  <td><select name="e_profile[]">
+    <option value="0">always</option>
+    {% for p in site.profiles %}<option value="{{ p.number }}" {% if profile == p.number %}selected{% endif %}>{{ p.number }} · {{ p.name }}</option>{% endfor %}
+  </select></td>
+</tr>
+{% endmacro %}
+
+{% macro state_badge(state) -%}
+<span class="badge {{ {'owned':'ok','active':'ok','written':'ok','commissioning':'warn','decommissioning':'warn','prepared':'warn','blacklisted':'bad','failed':'bad'}.get(state, '') }}">{{ state }}</span>
+{%- endmacro %}

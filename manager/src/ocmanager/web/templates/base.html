@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf }}">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "historyCacheSize": 0}'>
+  <title>{% block title %}OpenCylinder Manager{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:,">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body hx-boost="true">
+{% block body %}
+<div class="layout">
+  <aside class="side">
+    <div class="brand"><span class="dot"></span> OpenCylinder</div>
+    {% if tenants %}
+      <h4>Tenant</h4>
+      <select data-nav aria-label="Tenant">
+        {% if not tenant %}<option value="">— choose —</option>{% endif %}
+        {% for t in tenants %}<option value="/t/{{ t.slug }}" {% if tenant and t.id == tenant.id %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+      </select>
+    {% endif %}
+    {% if tenant %}
+      <nav>{% for i in nav.tenant %}<a href="{{ i.path }}" {% if request.url.path == i.path %}class="on"{% endif %}>{{ i.label }}</a>{% endfor %}</nav>
+      {% if sites %}
+        <h4>Site</h4>
+        <select data-nav aria-label="Site">
+          {% if not site %}<option value="">— choose —</option>{% endif %}
+          {% for s in sites %}<option value="/t/{{ tenant.slug }}/s/{{ s.id }}" {% if site and s.id == site.id %}selected{% endif %}>{{ s.name }} ({{ s.aid }})</option>{% endfor %}
+        </select>
+      {% endif %}
+      {% if site %}
+        <nav>{% for i in nav.site %}<a href="{{ i.path }}" {% if request.url.path == i.path %}class="on"{% endif %}>{{ i.label }}</a>{% endfor %}</nav>
+      {% endif %}
+    {% endif %}
+    {% if nav.platform %}
+      <h4>Platform</h4>
+      <nav>{% for i in nav.platform %}<a href="{{ i.path }}" {% if request.url.path == i.path %}class="on"{% endif %}>{{ i.label }}</a>{% endfor %}</nav>
+    {% endif %}
+    <h4>{{ op.username if op else "" }}{% if ctx %} · {{ ctx.role }}{% endif %}</h4>
+    <nav>
+      <a href="/account">Account &amp; API tokens</a>
+      <form method="post" action="/logout" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button class="link navlink">Log out</button></form>
+    </nav>
+    <p class="muted small footnote">mode: {{ settings.mode }}{% if settings.pm3_path %} · local encoder{% endif %}</p>
+  </aside>
+  <main class="main">
+    {% if site and site.dev_keys %}<div class="devkeys">⚠ This site uses the PUBLIC DEV TEST KEYS from the repository — bench only, protects nothing.</div>{% endif %}
+    {% for kind, msg in messages %}<div class="flash {{ kind }}">{{ msg }}</div>{% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}
+</body>
+</html>

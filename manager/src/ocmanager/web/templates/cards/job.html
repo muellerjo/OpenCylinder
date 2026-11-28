@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+{% set base = "/t/" ~ tenant.slug ~ "/s/" ~ site.id ~ "/cards/" ~ job.id %}
+<h1>{{ kinds.get(job.kind, job.kind) }} <span class="muted">#{{ job.id }}</span> {{ m.state_badge(job.status) }}</h1>
+<p>{{ job.summary }}</p>
+<p class="muted small">by {{ job.created_by }} · {{ job.created_at.strftime("%Y-%m-%d %H:%M") }}{% if job.sequence %} · sequence <span class="mono">{{ job.sequence }}</span>{% endif %}{% if job.card_uid %} · card UID <span class="mono">{{ job.card_uid }}</span>{% endif %}</p>
+
+<details class="panel"><summary>Payload</summary>
+  {% for k, v in job.payload.items() %}<label>{{ k }} ({{ v|length // 2 }} bytes)</label><pre>{{ v }}</pre>{% endfor %}
+  <p class="muted small">Not secret: bundles are signed (commissioning records encrypted to the lock); user card files are read-protected on the card.</p>
+</details>
+
+{% if results %}
+<div class="panel"><h2 class="mt0">{{ "Written ✓" if run_ok else "Failed ✗" }}</h2><ol class="steps">
+  {% for r in results %}<li class="{{ 'step-ok' if r.ok else 'step-bad' }}">{{ "✓" if r.ok else "✗" }} {{ r.desc }}{% if not r.ok %}<pre>{{ r.out }}</pre>{% endif %}</li>{% endfor %}</ol></div>
+{% endif %}
+
+{% if job.status in ("prepared", "failed") and ctx.can("cards.issue") %}
+  {% if pm3 %}
+  <div class="panel"><h2 class="mt0">Write with the local Proxmark3</h2>
+    <form method="post" action="{{ base }}/run" {% if job.kind == "user" %}data-confirm="The card on the Proxmark will be FORMATTED (all applications deleted). Continue?"{% endif %}>{{ m.csrf_field() }}
+      {% if job.kind == "user" %}<p class="checks"><label><input type="checkbox" name="confirm_format" value="1" required> I know this <b>formats</b> the card (dev card, factory master key)</label></p>{% endif %}
+      <button>Put the card on the Proxmark and write</button></form></div>
+  {% endif %}
+  <div class="panel"><h2 class="mt0">Proxmark3 commands</h2>
+    {% if needs_uid %}
+    <form method="get" action="{{ base }}" class="row">
+      <div><label>Card UID (7 bytes hex, from <code>hf 14a info</code>)</label><input name="uid" value="{{ uid }}" class="mono" pattern="[0-9A-Fa-f]{14}" required></div>
+      <button class="secondary">Show commands</button></form>
+    <p class="muted small">Keys are diversified per card (AN10922), so the commands depend on the UID. They contain <b>per-card</b> keys — never the master keys.</p>
+    {% endif %}
+    {% if plan_error %}<div class="flash error">{{ plan_error }}</div>{% endif %}
+    {% if steps %}
+      <button type="button" class="secondary" data-copy="#cmds">Copy all</button>
+      <pre id="cmds">{% for s in steps %}# {{ s.desc }}{% if s.expect == "fail" %}  (must FAIL){% endif %}
+{{ s.cmd }}
+{% endfor %}</pre>
+      <form method="post" action="{{ base }}/written" class="row">{{ m.csrf_field() }}
+        <input type="hidden" name="uid" value="{{ uid }}"><button>Mark as written</button></form>
+    {% endif %}
+  </div>
+  {{ m.post_button(base ~ "/cancel", "Cancel job", "danger", "Cancel this job?") }}
+{% endif %}
+{% if job.log %}<details class="panel"><summary>Log</summary><pre>{{ job.log }}</pre></details>{% endif %}
+{% endblock %}

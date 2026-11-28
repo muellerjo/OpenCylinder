@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Error {{ code }}{% endblock %}
+{% block body %}{% if op %}{{ super() }}{% else %}<div class="center"><div class="panel login"><h1>Error {{ code }}</h1><p>{{ detail }}</p><a href="/">Home</a></div></div>{% endif %}{% endblock %}
+{% block content %}
+<h1>{{ {403: "Not allowed", 404: "Not found", 409: "Conflict", 422: "Invalid input"}.get(code, "Error") }} <span class="muted">{{ code }}</span></h1>
+<div class="panel"><p>{{ detail }}</p><a href="/" class="btn secondary">Home</a></div>
+{% endblock %}

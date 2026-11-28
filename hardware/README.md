@@ -5,6 +5,13 @@ OpenCylinder. Version: see `VERSION`; each manufactured PCB additionally
 carries a board revision (`rev A`, `rev B`, …) on the silkscreen
 (see `../docs/versioning.md`).
 
+**Licence:** the hardware design files in this folder (PCB, antenna,
+mechanics, OpenSCAD models, drawings) are licensed under
+[CERN-OHL-P-2.0](LICENSE), the permissive CERN Open Hardware Licence.
+Scripts (e.g. `antenna/gen_coil.py`) stay MIT like the rest of the repository.
+Third-party reference photos in `mechanics/prior-art/images-local/` are not
+part of the repository and not covered by any of these licences.
+
 - `mechanics/clutch-design.md` — clutch / actuator concept and prior-art pool.
 - `knob-electronics.md` — knob electronics concept (architecture, dimension budget, antenna).
 - `design-plan.md` — detailed plan: housing, mechanics (clutch in the body), components, PCB, sequence H1–H8.

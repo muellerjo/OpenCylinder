@@ -12,6 +12,8 @@ format version**, not by keeping component versions in lockstep.
 | Firmware  | `firmware/VERSION`   | `fw-vX.Y.Z`      | SemVer |
 | Tools     | `tools/VERSION`      | `tools-vX.Y.Z`   | SemVer |
 | Hardware  | `hardware/VERSION`   | `hw-vX.Y.Z`      | SemVer + board revision (`rev A`, `rev B`, …) silkscreened on the PCB |
+| Manager (web GUI) | `manager/VERSION` | `manager-vX.Y.Z` | SemVer |
+| Firmware, Zephyr / nRF54L15 | `firmware-zephyr/VERSION` | `fwz-vX.Y.Z` (from milestone M1 on) | SemVer |
 | Card format | `spec/card-format.md` (`format_version` byte) | — | integer, `1, 2, 3…` |
 
 All components start at `0.1.0`. While the major version is `0`, anything may
@@ -68,3 +70,22 @@ when that storage is implemented.
 4. Push the tag explicitly: `git push origin fw-v0.2.0`.
 
 Nothing is tagged until a component is deliberately released.
+
+**Released so far:** `fw-v0.1.0`, `tools-v0.1.0`, `hw-v0.1.0`, `manager-v0.1.0`
+(2026-11-28, first baseline). `firmware-zephyr` gets its first tag when M1
+runs on the board.
+
+## Continuous integration
+
+GitHub Actions (`.github/workflows/`) run per component, only when its files
+change. A change under `spec/` runs everything that depends on the card
+format.
+
+| Workflow | Runs on changes to | Checks |
+|---|---|---|
+| `firmware` | `firmware/`, `spec/` | host tests (g++), PlatformIO builds `xiao-c3`, `c3-supermini`, `xiao-c3-prod` |
+| `manager` | `manager/`, `examples/`, `spec/` | full pytest suite on Python 3.11 + 3.13, incl. known-answer bytes |
+| `examples` | `examples/`, the shared protocol package, `spec/` | `check_access.py` on Python 3.9 with the standard library only; dry-runs of all writer scripts |
+| `hardware` | `hardware/` | knob mock-up renders with all fit checks; coil footprint matches its generator |
+
+Not in CI yet: `firmware-zephyr` (needs the nRF Connect SDK).

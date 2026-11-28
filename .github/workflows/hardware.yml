@@ -1,0 +1,30 @@
+# Hardware sources: the knob mock-up must render with all its fit checks
+# (OpenSCAD asserts) passing, and the committed coil footprint must be what
+# the generator produces.
+name: hardware
+
+on:
+  push:
+    paths: ["hardware/**", ".github/workflows/hardware.yml"]
+  pull_request:
+    paths: ["hardware/**", ".github/workflows/hardware.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y openscad
+      - name: knob mock-up renders, fit checks pass
+        run: |
+          for p in shell cap spacer; do
+            openscad --hardwarnings -o "/tmp/$p.stl" -D "part=\"$p\"" hardware/mechanics/knob-mockup/knob_mockup.scad
+          done
+      - name: coil footprint is reproducible
+        run: |
+          python3 hardware/antenna/gen_coil.py --out /tmp/coil.kicad_mod
+          diff /tmp/coil.kicad_mod hardware/antenna/Coil_NFC_D24mm_5T.kicad_mod

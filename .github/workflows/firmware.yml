@@ -1,0 +1,39 @@
+# ESP32-C3 firmware: host tests (plain g++) and PlatformIO builds of all
+# development boards plus the production-style build without bench commands.
+name: firmware
+
+on:
+  push:
+    paths: ["firmware/**", "spec/**", ".github/workflows/firmware.yml"]
+  pull_request:
+    paths: ["firmware/**", "spec/**", ".github/workflows/firmware.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: firmware/test/host/run_all.sh
+
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [xiao-c3, c3-supermini, xiao-c3-prod]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # FW_GIT = git describe --tags
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+      - run: pip install platformio
+      - run: pio run -d firmware -e ${{ matrix.env }}

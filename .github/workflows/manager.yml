@@ -1,0 +1,30 @@
+# Manager web GUI: full test suite (also runs the example scripts against
+# the recorded known-answer values). Runs when the manager, the shared
+# protocol, the examples or the spec change.
+name: manager
+
+on:
+  push:
+    paths: ["manager/**", "examples/**", "spec/**", ".github/workflows/manager.yml"]
+  pull_request:
+    paths: ["manager/**", "examples/**", "spec/**", ".github/workflows/manager.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: manager/pyproject.toml
+      - run: pip install -e 'manager[dev]'
+      - run: python -m pytest -q manager/tests

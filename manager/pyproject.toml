@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opencylinder-manager"
-version = "0.1.0"
+dynamic = ["version"]
 description = "OpenCylinder Manager — offline-first, multi-tenant web management for OpenCylinder sites, cards and locks"
 readme = "README.md"
 license = { text = "see repository LICENSE" }
@@ -32,6 +32,9 @@ ocm = "ocmanager.cli:main"
 # Third-party feature modules register here (see src/ocmanager/core/modules.py):
 # [project.entry-points."ocmanager.modules"]
 # myfeature = "my_package.module:MODULE"
+
+[tool.setuptools.dynamic]
+version = { file = "VERSION" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

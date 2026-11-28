@@ -1,0 +1,47 @@
+# Example scripts on the oldest supported Python: check_access.py must work
+# with the standard library only, the writer scripts' dry-runs with
+# `cryptography` (no Proxmark needed).
+name: examples
+
+on:
+  push:
+    paths: ["examples/**", "manager/src/ocmanager/protocol/**", "spec/**", ".github/workflows/examples.yml"]
+  pull_request:
+    paths: ["examples/**", "manager/src/ocmanager/protocol/**", "spec/**", ".github/workflows/examples.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.9", "3.13"]
+    defaults:
+      run:
+        working-directory: examples/hospital
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: check_access (standard library only)
+        run: |
+          python check_access.py --at "2026-11-24 03:00"
+          python check_access.py --door 4 --time-unknown
+          python check_access.py --card 2001
+          python check_access.py --site ../ems-station/site.json
+      - run: pip install cryptography
+      - name: writer scripts (dry-run)
+        run: |
+          QR="OC1:0000AC276EFB0250:032D77B4DFC66E71339D6775E82021DC80176779D14E3C93AAD0ADA154C166C4E0"
+          python an10922.py | grep -q PASS
+          python write_test_card.py --dry-run --uid 04AABBCCDDEE80
+          python write_test_card.py --dry-run --uid 04AABBCCDDEE80 --dam 2
+          python write_test_card.py --dry-run --uid 04AABBCCDDEE80 --site ../ems-station/site.json --user 9001
+          python write_admin_card.py --dry-run --uid 04AABBCCDDEE80
+          python write_admin_card.py --dry-run --uid 04AABBCCDDEE80 --reassign --door 6 --qr "$QR"
+          python write_admin_card.py --dry-run --uid 04AABBCCDDEE80 --decommission --qr "$QR"
+          python write_commissioning_card.py --dry-run --door 4 --qr "$QR"

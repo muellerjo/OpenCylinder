@@ -99,9 +99,10 @@ details beyond the public pages are not compared here.*
 | Path        | Content | Version |
 |-------------|---------|---------|
 | `firmware/` | lock firmware (PlatformIO; ESP32-C3 for development) | [`firmware/VERSION`](firmware/VERSION) |
-| `manager/`  | **web GUI**: sites, doors, people, cards, locks, signed admin cards — offline, multi-tenant ([start](manager/README.md)) | [`manager/pyproject.toml`](manager/pyproject.toml) |
+| `manager/`  | **web GUI**: sites, doors, people, cards, locks, signed admin cards — offline, multi-tenant ([start](manager/README.md)) | [`manager/VERSION`](manager/VERSION) |
+| `firmware-zephyr/` | production firmware for the nRF54L15 (Zephyr; skeleton, milestone M1) | [`firmware-zephyr/VERSION`](firmware-zephyr/VERSION) |
 | `tools/`    | desktop encoder / management tools (Python, Elatec TWN4) | [`tools/VERSION`](tools/VERSION) |
-| `hardware/` | electronics and mechanics | [`hardware/VERSION`](hardware/VERSION) |
+| `hardware/` | electronics and mechanics (licence: CERN-OHL-P-2.0) | [`hardware/VERSION`](hardware/VERSION) |
 | `spec/`     | card format — the contract between firmware and tools | `format_version` in the spec |
 | `docs/`     | commissioning, lifecycle & security, versioning | — |
 | `examples/` | worked examples, e.g. a [fictional hospital](examples/hospital/) to play with the card format | — |
@@ -124,18 +125,96 @@ swaps transport and crypto backends, not the logic.
 - **Phase 1 — bring-up: ✅ done.** Card detection, native DESFire over ISO-DEP,
   AES authentication against a real DESFire EV1 — all cross-checked with a
   Proxmark3.
-- **Phase 2 — decision logic: ✅ bench done.** Encrypted read of the card
-  record, door/zone access list, expiry, time-unknown rule, blacklist —
-  the XIAO plays a door of the [example hospital](examples/hospital/).
-  Still open: time profiles, actuator + fail-safe.
-- **Phase 3 — tools: 🚧 in progress.** Card personalisation, admin cards and
-  lock commissioning work as scripts ([`examples/hospital/`](examples/hospital/))
-  and in the [manager GUI](manager/README.md). Still open: Proxmark writing from
-  the GUI tested on hardware, and an encoder agent for server installs.
-- **Phase 4 — hardening:** hardware key storage, battery + low power, clutch
-  prototype, enclosure.
+- **Phase 2 — decision logic: ✅ bench done.** Encrypted read, door/zone
+  access list, expiry, time profiles, blacklist, time-unknown rule — the XIAO
+  plays a door of the [example hospital](examples/hospital/). Still open: a real
+  actuator with fail-safe.
+- **Phase 3 — tools: 🚧 in progress.** Admin cards, commissioning and card
+  personalisation work as scripts and in the [manager GUI](manager/README.md).
+- **Phase 4 — production hardware: 🚧 planning.** nRF54L15, hardware key
+  storage, low power, knob antenna, clutch, housing
+  ([`hardware/design-plan.md`](hardware/design-plan.md)).
 - **Later — online (optional):** update points (online readers writing bundles
   onto user cards) → online doors → radio variants, if ever.
+
+## Progress — done and open
+
+Status as of 2026-11-28. Ticked items are committed and, where hardware is
+involved, verified on the bench. Details live in the linked documents.
+
+### Card format and protocol ([`spec/`](spec/))
+
+- [x] Card format v1: header + door/zone access list, one application per site, 3 AES keys per site (issuer, read, UID) — [`card-format.md`](spec/card-format.md)
+- [x] Per-card keys: NXP AN10922 diversification (M = UID ‖ AID)
+- [x] Time profiles (2 intervals, night shifts) and a POSIX time-zone rule on the lock — [`time-profiles.md`](spec/time-profiles.md)
+- [x] Several independent sites on one card via DESFire DAM (EV2/EV3); a two-site EV3 card was verified with the lock
+- [x] Admin cards (draft spec): signed maintenance bundles (ECDSA P-256, monotonic sequence), blacklist add/remove/replace, time sync with rollback rule — [`admin-card.md`](spec/admin-card.md)
+- [x] Commissioning encrypted to one lock (ECIES to the lock's own device key), identify card, reassignment (0x31), decommission (0x40)
+- [ ] Event-log read-out via admin card (privacy rules first)
+- [ ] Random-UID cards for admin cards
+- [ ] Revocation and updates carried by user cards (update points)
+- [ ] Freeze the admin-card spec (today: draft)
+
+### Firmware — ESP32-C3 bench lock ([`firmware/`](firmware/))
+
+- [x] Phase 1: card detection, ISO-DEP, DESFire AES authentication (cross-checked with a Proxmark3)
+- [x] Phase 2: encrypted read, access decision, expiry, blacklist, time-unknown rule (door 4 of the example hospital)
+- [x] Time profiles, TZ rule, rollback high-water mark; stale bundles may only move the clock forward
+- [x] Maintenance bundles applied with signature and sequence checks; local event log (ring buffer)
+- [x] Lock states FACTORY → OWNED: device key pair, identify card, commissioning, decommission, reassignment
+- [x] No built-in keys: a lock gets keys only by commissioning; bench serial commands only in bench builds
+- [x] RGB status LED, GPIO bench actuator, host tests for decision / bundles / event log
+- [ ] Real actuator (motor + clutch) with fail-safe behaviour
+- [ ] Keys in hardware key storage (moves to the nRF54L15, M3)
+
+### Firmware — nRF54L15 production path ([`docs/production-path.md`](docs/production-path.md))
+
+- [x] Decision: nRF54L15, Zephyr; offline variant without radio code
+- [x] Zephyr M1 skeleton for the Seeed XIAO nRF54L15 (written, not yet run — boards ordered)
+- [ ] M1: ST25R3916 detects a card (ST RFAL on Zephyr)
+- [ ] M2: portable libraries ported, same decisions as the ESP32 bench lock
+- [ ] M3: PSA Crypto + hardware key storage; commissioning on the nRF54L15
+- [ ] M4: low power (LPCD wake-up, sleep), measured with a current profiler
+- [ ] M5: custom PCB rev A runs M2–M4
+- [ ] M6: knob antenna + clutch prototype
+- [ ] M7 (optional): online variant over Thread
+
+### Tools and the manager GUI ([`examples/`](examples/hospital/), [`manager/`](manager/README.md))
+
+- [x] Fictional example sites (hospital, EMS station) with an access-matrix script
+- [x] Proxmark3 scripts: user cards, maintenance cards, commissioning, identify, reassign/decommission, DAM grants
+- [x] Manager web GUI: sites, zones, doors, profiles, roles, people and cards, blacklist, lock registry, all card types, access matrix, audit log
+- [x] Multi-tenant with roles (owner, admin, operator, auditor), API tokens, sealed site keys, one-command start with first-run setup
+- [x] One implementation of the wire formats for scripts and GUI, pinned by known-answer tests
+- [ ] Card writing from the GUI tried with the Proxmark3 on a real card
+- [ ] Encoder agent for server installations (encoder PC fetches card plans via the API)
+- [ ] DAM (several sites on one card) and identify-card read-out in the GUI
+- [ ] Database migrations (Alembic), backup/restore, OIDC login
+- [ ] Elatec TWN4 as encoder (today: card reading only, [`tools/encoder/`](tools/encoder/))
+
+### Hardware ([`hardware/`](hardware/))
+
+- [x] Architecture: everything in the outer knob (antenna, reader, MCU, battery, motor) — [`knob-electronics.md`](hardware/knob-electronics.md)
+- [x] Decided: knob Ø 38 × 42 mm, 1 × CR2; snap-in knob released by the motor only with a disassembly right; battery cover released with a battery-change right; emergency power mandatory — [`design-plan.md`](hardware/design-plan.md) §1
+- [x] Knob mock-up in OpenSCAD with fit checks — [`mechanics/knob-mockup/`](hardware/mechanics/knob-mockup/)
+- [x] NFC coil generator + KiCad footprint (Ø 24 mm, ≈ 1 µH; not yet checked in KiCad)
+- [x] Prior-art analysis of a commercial knob cylinder (facts only)
+- [ ] D1: clutch in the knob or in the body — decided by the clutch test rig (H3)
+- [ ] D3: encapsulated, authenticated actuator for production
+- [ ] D6/D7/D8: bare nRF54L15 chip, flat rev A bench board, Euro profile 30/30 — recommended, not yet confirmed
+- [ ] H2: antenna test boards, tuning with a VNA, read range through the cap
+- [ ] H3: clutch test rig (2× scale) with the four motor positions
+- [ ] H4–H6: rev A board, mock-up v2, rev B Ø 32 mm boards in the knob
+- [ ] H7–H8: metal prototype, attack tests, encapsulated actuator
+- [ ] Mechanical override for a dead battery or hung MCU
+
+### Repository and process
+
+- [x] One repository, independently versioned components; first tags `fw-v0.1.0`, `tools-v0.1.0`, `hw-v0.1.0`, `manager-v0.1.0` — [`docs/versioning.md`](docs/versioning.md)
+- [x] CI per component, triggered only by its own paths (firmware, manager, examples, hardware)
+- [x] Licences: software MIT, hardware CERN-OHL-P-2.0
+- [ ] `firmware-zephyr` in CI (needs the nRF Connect SDK)
+- [ ] Release artifacts (firmware binaries per board × variant) built by CI
 
 ## Security status
 
@@ -153,4 +232,11 @@ Not production-secure until at least:
 
 ## License
 
-[MIT](LICENSE)
+- **Software** (firmware, manager, tools, examples, scripts anywhere in the
+  repo): [MIT](LICENSE).
+- **Hardware** (everything in [`hardware/`](hardware/) except scripts:
+  PCB, antenna, mechanics, OpenSCAD models, drawings):
+  [CERN-OHL-P-2.0](hardware/LICENSE), the permissive CERN Open Hardware
+  Licence. Like MIT, it lets anyone build, change and sell the design. Unlike
+  MIT, it is written for physical products.
+- **Documentation and specs**: MIT, like the software.

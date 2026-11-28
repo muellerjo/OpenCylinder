@@ -3,9 +3,25 @@
 All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Components are versioned independently (see `docs/versioning.md`); entries are
-prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
+prefixed with the component: `fw`, `fwz`, `tools`, `hw`, `manager`, `spec`, `docs`, `ci`.
 
 ## [Unreleased]
+
+### Added
+- ci: GitHub Actions per component with path filters — `firmware` (host
+  tests + PlatformIO builds), `manager` (pytest, Python 3.11/3.13),
+  `examples` (Python 3.9 standard library + dry-runs), `hardware` (OpenSCAD
+  fit checks, coil footprint reproducible); `firmware/test/host/run_all.sh`.
+- hw: licence CERN-OHL-P-2.0 for the hardware design files (`hardware/LICENSE`);
+  software stays MIT.
+- manager: version in `manager/VERSION` (tag `manager-vX.Y.Z`).
+- docs: README "Progress — done and open" checklist; versioning lists the
+  manager and Zephyr firmware tags and the CI workflows.
+
+## 2026-11-28 — first tagged baseline: `fw-v0.1.0`, `tools-v0.1.0`, `hw-v0.1.0`, `manager-v0.1.0`
+
+Everything below was developed before the first tags and is contained in
+them.
 
 ### Changed
 - examples + manager: one implementation of the wire formats. The example

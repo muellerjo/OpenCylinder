@@ -14,7 +14,7 @@ python3 check_access.py --card 2001              # the actual card bytes of one 
 python3 check_access.py --time-unknown           # a lock that lost its clock
 ```
 
-Standard-library Python 3.9+, no installation. Edit [`site.json`](site.json)
+Standard-library Python 3.10+, no installation. Edit [`site.json`](site.json)
 and run it again.
 
 > Prefer clicking? The same site runs in the web GUI: `python3 manager/app.py`

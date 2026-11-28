@@ -11,7 +11,7 @@ bytes for every door.
   python3 check_access.py --door 4                 # explain one door
   python3 check_access.py --card 2001              # card bytes of one user
 
-Standard library only (Python 3.9+); the format and decision logic come from
+Standard library only (Python 3.10+); the format and decision logic come from
 the shared package manager/src/ocmanager/protocol (no extra install).
 """
 

@@ -85,7 +85,7 @@ format.
 |---|---|---|
 | `firmware` | `firmware/`, `spec/` | host tests (g++), PlatformIO builds `xiao-c3`, `c3-supermini`, `xiao-c3-prod` |
 | `manager` | `manager/`, `examples/`, `spec/` | full pytest suite on Python 3.11 + 3.13, incl. known-answer bytes |
-| `examples` | `examples/`, the shared protocol package, `spec/` | `check_access.py` on Python 3.9 with the standard library only; dry-runs of all writer scripts |
+| `examples` | `examples/`, the shared protocol package, `spec/` | `check_access.py` on Python 3.10 (oldest supported) with the standard library only; dry-runs of all writer scripts |
 | `hardware` | `hardware/` | knob mock-up renders with all fit checks; coil footprint matches its generator |
 
 Not in CI yet: `firmware-zephyr` (needs the nRF Connect SDK).

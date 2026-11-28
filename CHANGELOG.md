@@ -10,8 +10,13 @@ prefixed with the component: `fw`, `fwz`, `tools`, `hw`, `manager`, `spec`, `doc
 ### Added
 - ci: GitHub Actions per component with path filters — `firmware` (host
   tests + PlatformIO builds), `manager` (pytest, Python 3.11/3.13),
-  `examples` (Python 3.9 standard library + dry-runs), `hardware` (OpenSCAD
+  `examples` (Python 3.10 standard library + dry-runs), `hardware` (OpenSCAD
   fit checks, coil footprint reproducible); `firmware/test/host/run_all.sh`.
+- fw: ESP32 platform pinned (`espressif32 @ 6.13.0`, the version the bench
+  lock is verified with) — unpinned, CI picked up 8.0.0 and the build failed;
+  PlatformIO Core pinned to 6.2.0 in CI.
+- examples: oldest supported Python is now 3.10 (3.9 is end-of-life and no
+  longer available on GitHub's runners).
 - hw: licence CERN-OHL-P-2.0 for the hardware design files (`hardware/LICENSE`);
   software stays MIT.
 - manager: version in `manager/VERSION` (tag `manager-vX.Y.Z`).

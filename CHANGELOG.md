@@ -8,6 +8,12 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
 ## [Unreleased]
 
 ### Added
+- manager: offline, multi-tenant web GUI — `python3 manager/app.py`, first-start
+  setup in the browser (optional example hospital), sites/zones/doors/time
+  profiles, people + roles + cards, blacklist, lock registry, user /
+  maintenance / commissioning / reassign / decommission cards with Proxmark3
+  plans, access matrix, audit log, API tokens; `--reset-password USER`;
+  README with screenshots (`manager/docs/screenshots/`).
 - repo: monorepo layout (`firmware/`, `tools/`, `hardware/`, `spec/`, `docs/`)
   and per-component versioning, all starting at `0.1.0`.
 - fw: PlatformIO project for ESP32-C3 SuperMini and Seeed XIAO ESP32C3 dev

@@ -8,6 +8,19 @@ components are optional additions ([`docs/online-architecture.md`](docs/online-a
 > **Status: early development.** Nothing here is secure for a real door yet.
 > See [Security status](#security-status).
 
+## Try it — the manager GUI
+
+```bash
+python3 manager/app.py        # then open http://127.0.0.1:8243
+```
+
+On first start you choose a user and password and can load the fictional
+example hospital. Then click through doors, people, cards and locks, and see
+in the **access matrix** who opens which door at any time. It runs fully
+offline. More screenshots and details are in [`manager/`](manager/README.md).
+
+![OpenCylinder Manager — access matrix](manager/docs/screenshots/03-access-matrix.png)
+
 ## Why
 
 Commercial electronic cylinders open (at best) the *read* side — how a lock
@@ -86,6 +99,7 @@ details beyond the public pages are not compared here.*
 | Path        | Content | Version |
 |-------------|---------|---------|
 | `firmware/` | lock firmware (PlatformIO; ESP32-C3 for development) | [`firmware/VERSION`](firmware/VERSION) |
+| `manager/`  | **web GUI**: sites, doors, people, cards, locks, signed admin cards — offline, multi-tenant ([start](manager/README.md)) | [`manager/pyproject.toml`](manager/pyproject.toml) |
 | `tools/`    | desktop encoder / management tools (Python, Elatec TWN4) | [`tools/VERSION`](tools/VERSION) |
 | `hardware/` | electronics and mechanics | [`hardware/VERSION`](hardware/VERSION) |
 | `spec/`     | card format — the contract between firmware and tools | `format_version` in the spec |
@@ -114,7 +128,10 @@ swaps transport and crypto backends, not the logic.
   record, door/zone access list, expiry, time-unknown rule, blacklist —
   the XIAO plays a door of the [example hospital](examples/hospital/).
   Still open: time profiles, actuator + fail-safe.
-- **Phase 3 — tools:** card personalisation and lock commissioning.
+- **Phase 3 — tools: 🚧 in progress.** Card personalisation, admin cards and
+  lock commissioning work as scripts ([`examples/hospital/`](examples/hospital/))
+  and in the [manager GUI](manager/README.md). Still open: Proxmark writing from
+  the GUI tested on hardware, and an encoder agent for server installs.
 - **Phase 4 — hardening:** hardware key storage, battery + low power, clutch
   prototype, enclosure.
 - **Later — online (optional):** update points (online readers writing bundles

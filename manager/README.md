@@ -1,23 +1,52 @@
 # OpenCylinder Manager
 
-The web GUI for OpenCylinder sites. Use it to manage sites, doors, zones, time profiles, people, cards, locks and signed admin bundles.
+Manage your OpenCylinder site in the browser: doors, zones, time profiles, people, their cards, your locks and the signed admin cards.
 
-- **Offline-first.** It is one Python process with SQLite and no CDN, and it needs no internet. It runs on a single PC (`local` mode) or on a server for several organisations (`server` mode).
-- **Multi-tenant.** One installation serves several organisations, and each one is strictly isolated.
-- **Same bytes as the reference scripts.** Card files, bundles, commissioning records and Proxmark commands are byte-identical to `examples/hospital/*.py`. `tests/test_protocol_equivalence.py` checks this.
-
-**Status:** v0.1, tested against the example sites. It has not been used on a real site yet. No migrations yet: the schema is created at start, and Alembic will come once it settles.
+![Access matrix](docs/screenshots/03-access-matrix.png)
 
 ## Start
 
 ```bash
-python3 manager/app.py            # http://127.0.0.1:8243
+python3 manager/app.py            # then open http://127.0.0.1:8243
 ```
 
-- **First start:** the browser asks for your admin user. It can load the example hospital (bench dev keys).
-- **Data:** lives in `manager/data/` (git-ignored). Delete that folder to start over.
-- **Forgotten password:** `python3 manager/app.py --reset-password USER` (no USER: list users).
-- **Missing packages:** `python3 -m venv manager/.venv && manager/.venv/bin/pip install -r manager/requirements.txt`, once. After that, `app.py` uses this venv by itself.
+That's all you need.
+
+- **First start:** the browser asks for a user name and password. Leave "load the example hospital" ticked to get a complete example site to play with.
+- **Forgot your password?** `python3 manager/app.py --reset-password USER` (without USER it lists the users).
+- **Start over:** stop it (Ctrl+C) and delete `manager/data/`.
+- **Other port, or reachable from your network:** add `--port 8250` and/or `--host 0.0.0.0`.
+- **Missing packages?** The script tells you the one line to run. It uses `manager/.venv` automatically.
+
+<p><img src="docs/screenshots/01-setup.png" width="420" alt="First start"></p>
+
+## What you do with it
+
+1. **Describe the building.** Add doors and zones (a zone groups doors, e.g. "Ward 1"), plus time profiles such as "Day shift 06–20".
+2. **Add people.** Give each person roles (templates like "Nurse, ward 1") and individual extras. The **access matrix** shows at once who opens which door at any time, using the lock's own decision logic.
+3. **Issue cards.** The manager prepares the card and shows the Proxmark3 commands for that card's UID. With a Proxmark3 attached (`OCM_PM3_PATH=~/proxmark3/pm3`), it writes the card itself.
+4. **Commission locks.** Register a lock by its QR text and prepare a commissioning card for its door. The card is encrypted to that one lock. Tap it, then click "confirm".
+5. **Keep locks up to date.** A lost card goes on the blacklist. Profile or time-zone changes travel with a signed **maintenance card** that you tap on the locks.
+
+## Tour
+
+| | |
+|---|---|
+| ![Sites](docs/screenshots/02-sites.png) **Sites.** One per DESFire application, each with its own keys. Create one, or import a `site.json`. | ![Doors](docs/screenshots/08-doors.png) **Doors and zones.** Includes which lock sits where. |
+| ![Person](docs/screenshots/05-person.png) **A person.** Their cards, what the card will carry, roles and extra rights. | ![Card job](docs/screenshots/06-card-job.png) **Card job.** Proxmark3 commands for this card's UID (per-card keys only). |
+| ![Lock](docs/screenshots/07-lock.png) **A lock.** Identity, state, and cards for commissioning, reassignment and decommissioning. | ![Cards](docs/screenshots/09-cards.png) **Cards and bundles.** Every prepared card, with signed sequence numbers. |
+
+Dark mode follows your system setting:
+
+<p><img src="docs/screenshots/10-dark.png" width="640" alt="Dark mode"></p>
+
+## Good to know
+
+- **Offline.** One Python process with SQLite. It never contacts the internet: no CDN, no cloud, no telemetry.
+- **Several organisations.** One installation can serve several tenants, each strictly isolated. Each member has a role: owner, admin, operator or auditor.
+- **Your keys stay sealed.** Site keys are encrypted at rest and never shown. A copy of the database alone reveals nothing.
+- **Same bytes as the reference scripts.** Cards and bundles are byte-identical to `examples/hospital/*.py`, and tests check this.
+- **Status: v0.1.** Tested with the example sites and in automated tests. The Proxmark write path has not been tried on hardware yet, and it is not for a real door yet.
 
 ## Scripted setup (`ocm` CLI)
 

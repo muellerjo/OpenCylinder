@@ -54,7 +54,8 @@ def setup(request: Request, username: str = Form(...), password: str = Form(...)
         return redirect("/login")
     try:
         op = create_operator(db, username, password, platform_admin=True, request=request)
-        slug = "".join(ch if ch.isalnum() else "-" for ch in org.lower()).strip("-")[:48] or "main"
+        import re
+        slug = re.sub(r"[^a-z0-9]+", "-", org.lower()).strip("-")[:48] or "main"
         t = create_tenant(db, slug, org, op, request)
         set_membership(db, t, op, "owner", op, request)
         if example:

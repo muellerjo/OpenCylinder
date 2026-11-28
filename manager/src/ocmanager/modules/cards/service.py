@@ -81,7 +81,7 @@ def issue_maintenance(ctx: TenantContext, site: Site, valid_days: float = 2, bla
         records = S.maintenance_records(site, bl)
         actions, kind = B.ACT_TIME | B.ACT_BLACKLIST | B.ACT_PROFILES, "maintenance"
     bundle, seq, now, until = _signed(ctx, site, records, valid_days)
-    return _job(ctx, site, kind, f"{len(bl)} blacklist entries"
+    return _job(ctx, site, kind, f"{len(bl)} blacklist {'entry' if len(bl) == 1 else 'entries'}"
                 + ("" if blacklist_only else f", {len(site.profiles)} profiles, TZ {site.posix_tz}"),
                 {"header": B.admin_header(actions, until, now).hex().upper(), "bundle": bundle.hex().upper()},
                 sequence=seq, valid_until=until)

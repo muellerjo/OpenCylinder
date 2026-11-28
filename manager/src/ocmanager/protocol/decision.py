@@ -1,12 +1,13 @@
 """The lock's decision logic (spec/card-format.md), run on real card bytes."""
 
+from __future__ import annotations
+
 import struct
 from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from .bundle import DAYS
-from .card import FORMAT_VERSION, MAX_ENTRIES, TYPE_DOOR
+from .card import DAYS, FORMAT_VERSION, MAX_ENTRIES, TYPE_DOOR
 
 OPEN, NO_RIGHT, PROFILE, EXPIRED, BLACKLISTED, NO_TIME = "open", "none", "profile", "expired", \
     "blacklisted", "notime"

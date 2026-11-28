@@ -29,11 +29,14 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from an10922 import diversify  # noqa: E402
 from bundle import (T_BLACKLIST_ADD, T_BLACKLIST_REMOVE, T_BLACKLIST_REPLACE,  # noqa: E402
                     T_DECOMMISSION, T_LOCK_ASSIGNMENT, T_TIME_PROFILES, T_TZ_RULE, blacklist_value, build_bundle,
                     load_signing_key, profiles_value, public_key_raw, sign, tlv)
-from write_test_card import ZERO, looks_failed, read_uid, run_pm3, step, verified  # noqa: E402
+from write_test_card import looks_failed, read_uid, run_pm3, step, verified  # noqa: E402
+from ocmanager.protocol.bundle import (ACT_BLACKLIST, ACT_DECOMMISSION, ACT_PROFILES,  # noqa: E402
+                                      ACT_REASSIGN, ACT_TIME, BUNDLE_FILE_SIZE, admin_header,
+                                      assignment_value)
+from ocmanager.protocol.encoder import admin_card_plan  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 
@@ -41,10 +44,6 @@ HERE = Path(__file__).resolve().parent
 KA0_ADMIN_ISSUER_MASTER = "1F1E1D1C1B1A19181716151413121110"
 KA1_ADMIN_READ_MASTER = "A1B2C3D4E5F60718293A4B5C6D7E8F90"
 
-ADMIN_FORMAT_VERSION = 1
-BUNDLE_FILE_SIZE = 0x400
-ACT_TIME, ACT_BLACKLIST, ACT_PROFILES = 0x01, 0x02, 0x04
-ACT_REASSIGN, ACT_DECOMMISSION = 0x08, 0x10
 
 
 def unix(iso):
@@ -59,8 +58,7 @@ def build_records(site, args):
         return tlv(T_DECOMMISSION, b""), actions | ACT_DECOMMISSION
     if args.reassign:
         zones = next(d["zones"] for d in site["doors"] if d["id"] == args.door)
-        value = struct.pack("<HB", args.door, len(zones)) + b"".join(struct.pack("<H", z) for z in zones)
-        return tlv(T_LOCK_ASSIGNMENT, value), actions | ACT_REASSIGN
+        return tlv(T_LOCK_ASSIGNMENT, assignment_value(args.door, zones)), actions | ACT_REASSIGN
     if args.blacklist_add or args.blacklist_remove:
         if args.blacklist_add:
             recs += tlv(T_BLACKLIST_ADD, blacklist_value((c, far_future) for c in args.blacklist_add))
@@ -141,8 +139,7 @@ def main():
             bundle = bytes(b)
         if len(bundle) > BUNDLE_FILE_SIZE:
             sys.exit(f"bundle too large: {len(bundle)} bytes")
-        header = struct.pack("<BBHIII", ADMIN_FORMAT_VERSION, actions, 0, 1,
-                             now + int(args.valid_days * 86400), now)
+        header = admin_header(actions, now + int(args.valid_days * 86400), now)
 
         uid = bytes.fromhex(args.uid or "04000000000000") if args.dry_run else \
             read_uid(args.pm3, args.port)
@@ -152,45 +149,14 @@ def main():
         if not args.dry_run and not args.recreate:
             _rc, out = run_pm3(args.pm3, args.port, "hf mfdes getaids")
             exists = admin_aid.upper() in out.upper()
-        m = uid + admin_aid_wire
-        ka0 = diversify(bytes.fromhex(KA0_ADMIN_ISSUER_MASTER), m).hex().upper()
-        ka1 = diversify(bytes.fromhex(KA1_ADMIN_READ_MASTER), m).hex().upper()
-        auth0 = f"-n 0 -t aes -k {ka0}"
-        auth1 = f"-n 1 -t aes -k {ka1}"
-        rights = "--amode encrypt --rrights key1 --wrights key0 --rwrights key0 --chrights key0"
-
-        def chkey(no, new):
-            return (f"hf mfdes changekey --aid {admin_aid} -n 0 -t aes -k {ZERO} --newkeyno {no} "
-                    f"--oldalgo aes --oldkey {ZERO} --newalgo aes --newkey {new} --newver 01")
-
         print(("Reusing the existing admin application (only file contents are rewritten).\n"
                if exists else "Creating the admin application.\n") if not args.dry_run else "", end="")
         print(f"Maintenance bundle: sequence {seq}, issued_at {now}, {len(bundle)} bytes, "
               f"signed with {args.key.name}")
         print(f"  lock public key (dev): {public_key_raw(key).hex().upper()}")
         print(f"  bundle: {bundle.hex().upper()}\n")
-        create = [
-            step(f"A1  delete old admin application {admin_aid} (may not exist)",
-                 f"hf mfdes deleteapp --aid {admin_aid}", expect="any"),
-            step(f"A2  create admin application {admin_aid} with 2 AES keys",
-                 f"hf mfdes createapp --aid {admin_aid} --ks1 0B --dstalgo aes --numkeys 2"),
-            step("A3  set key 1 (admin read key, diversified)", chkey(1, ka1)),
-            step("A3  set key 0 (admin issuer key, diversified) — last", chkey(0, ka0)),
-            step("B1  create file 0 (admin header, 16 bytes)",
-                 f"hf mfdes createfile --aid {admin_aid} {auth0} --fid 00 --size 000010 {rights}"),
-            step(f"B1  create file 1 (bundle, {BUNDLE_FILE_SIZE} bytes)",
-                 f"hf mfdes createfile --aid {admin_aid} {auth0} --fid 01 "
-                 f"--size {BUNDLE_FILE_SIZE:06X} {rights}"),
-        ]
-        steps = ([] if exists else create) + [
-            step("B2  write admin header",
-                 f"hf mfdes write --aid {admin_aid} {auth0} -m encrypt --fid 00 -d {header.hex().upper()}"),
-            step("B2  write signed bundle",
-                 f"hf mfdes write --aid {admin_aid} {auth0} -m encrypt --fid 01 -d {bundle.hex().upper()}"),
-            step("C1  read bundle back with admin READ key",
-                 f"hf mfdes read --aid {admin_aid} {auth1} -m encrypt --fid 01 -l {len(bundle):06X}",
-                 verify_hex=bundle.hex().upper()),
-        ]
+        steps = admin_card_plan(admin_aid, uid, header, bundle, bytes.fromhex(KA0_ADMIN_ISSUER_MASTER),
+                                bytes.fromhex(KA1_ADMIN_READ_MASTER), app_exists=exists)
 
     if args.dry_run:
         for s in steps:

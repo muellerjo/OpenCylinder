@@ -17,6 +17,16 @@ python3 check_access.py --time-unknown           # a lock that lost its clock
 Standard-library Python 3.9+, no installation. Edit [`site.json`](site.json)
 and run it again.
 
+> Prefer clicking? The same site runs in the web GUI: `python3 manager/app.py`
+> from the repository root, and keep "load the example hospital" ticked at
+> first start ([`manager/`](../../manager/README.md)).
+>
+> **One implementation:** these scripts and the GUI share the same code for
+> card files, bundles, key diversification, commissioning and Proxmark
+> commands (`manager/src/ocmanager/protocol/`, found automatically through
+> [`_protocol.py`](_protocol.py)). `check_access.py` still needs nothing but
+> the standard library. The writer scripts need `cryptography`.
+
 ## The structure in four ideas
 
 **1. Locks know where they are; cards know who may go where.**

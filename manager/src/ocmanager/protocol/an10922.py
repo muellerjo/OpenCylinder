@@ -1,5 +1,7 @@
 """NXP AN10922 AES-128 key diversification. M = UID (7) || AID (3, wire order)."""
 
+from __future__ import annotations
+
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 

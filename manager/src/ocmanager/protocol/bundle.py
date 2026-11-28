@@ -3,6 +3,8 @@
   header (27 bytes) | TLV payload | ECDSA P-256 signature (r || s, 64 bytes)
 """
 
+from __future__ import annotations
+
 import struct
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -29,8 +31,7 @@ ACT_TIME, ACT_BLACKLIST, ACT_PROFILES = 0x01, 0x02, 0x04
 ACT_REASSIGN, ACT_DECOMMISSION = 0x08, 0x10
 
 NO_EXPIRY = 0xFFFFFFFF
-DAY_BITS = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
-DAYS = list(DAY_BITS)
+from .card import DAY_BITS, DAYS, normalize_profile  # noqa: E402,F401  (re-exported)
 
 
 def tlv(t: int, value: bytes) -> bytes:
@@ -52,7 +53,7 @@ def minutes(hhmm: str) -> int:
 def profiles_value(profiles) -> bytes:
     """profiles: iterable of dicts {id, days: [..], intervals: [{from, to}, ..]} -> 10-byte records."""
     out = b""
-    for p in profiles:
+    for p in map(normalize_profile, profiles):
         days = sum(1 << DAY_BITS[d] for d in p["days"])
         ivs = list(p["intervals"])[:2]
         ivs += [{"from": "00:00", "to": "00:00"}] * (2 - len(ivs))

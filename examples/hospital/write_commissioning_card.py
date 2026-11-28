@@ -21,30 +21,22 @@ Proxmark3 client and the Python `cryptography` package.
 
 import argparse
 import json
-import os
 import re
-import struct
 import sys
 import time
 from pathlib import Path
 
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bundle import (T_BLACKLIST_REPLACE, T_TIME_PROFILES, T_TZ_RULE,  # noqa: E402
-                    blacklist_value, build_bundle, load_signing_key, profiles_value,
-                    public_key_raw, sign, tlv)
+                    blacklist_value, load_signing_key, profiles_value, tlv)
 from sitekeys import site_keys  # noqa: E402
-from write_test_card import ZERO, looks_failed, run_pm3, step, verified  # noqa: E402
+from write_test_card import looks_failed, run_pm3, step, verified  # noqa: E402
+from ocmanager.protocol.bundle import COMMISSIONING_FILE_SIZE as FILE_SIZE  # noqa: E402
+from ocmanager.protocol.commissioning import AID, LockIdentity, SiteSecrets  # noqa: E402
+from ocmanager.protocol.commissioning import commissioning_bundle as _commissioning_bundle  # noqa: E402
+from ocmanager.protocol.encoder import commissioning_card_plan  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-AID = "4F434B"
-FILE_SIZE = 0x200
-T_COMMISSIONING = 0x30
-HKDF_INFO = b"OpenCylinder commissioning v1"
 
 
 def parse_qr(text):
@@ -72,38 +64,20 @@ def resolve_qr(qr):
 
 
 def commissioning_bundle(site, door, device_id, lock_pub33, key, now, valid_days, keys):
+    """Signed commissioning bundle (shared implementation: ocmanager.protocol.commissioning)."""
     zones = next(d["zones"] for d in site["doors"] if d["id"] == door)
     wire = lambda aid: bytes.fromhex(aid)[::-1]  # noqa: E731
-    mgmt_pub = public_key_raw(key)  # uncompressed, 65 bytes
-    plain = (wire(site["site"]["aid"]) + wire(site["site"]["admin_aid"]) +
-             bytes.fromhex(keys["read_master"]) + bytes.fromhex(keys["uid_key"]) +
-             bytes.fromhex(keys["admin_read_master"]) + mgmt_pub +
-             struct.pack("<HB", door, len(zones)) + b"".join(struct.pack("<H", z) for z in zones))
-
+    secrets = SiteSecrets(wire(site["site"]["aid"]), wire(site["site"]["admin_aid"]),
+                          bytes.fromhex(keys["read_master"]), bytes.fromhex(keys["uid_key"]),
+                          bytes.fromhex(keys["admin_read_master"]))
     # Other records: maintenance data so the lock is complete after one tap.
     far = 0xFFFFFFFF
     others = (tlv(T_BLACKLIST_REPLACE, blacklist_value((c, far) for c in site["blacklist"])) +
               tlv(T_TIME_PROFILES, profiles_value(site["time_profiles"])) +
               tlv(T_TZ_RULE, site["site"]["posix_tz"].encode("ascii")))
-    rec_len = 65 + 12 + len(plain) + 16
-    payload_len = 3 + rec_len + len(others)
-    # Header (27 bytes) depends only on the payload length -> build it first, it is the AAD.
-    header = build_bundle(wire(site["site"]["aid"]), now, now, now + int(valid_days * 86400),
-                          bytes(payload_len), target_device=device_id)[:27]
-
-    lock_pub = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), lock_pub33)
-    eph = ec.generate_private_key(ec.SECP256R1())
-    shared = eph.exchange(ec.ECDH(), lock_pub)
-    aes_key = HKDF(hashes.SHA256(), 16, salt=device_id, info=HKDF_INFO).derive(shared)
-    nonce = os.urandom(12)
-    ct_tag = AESGCM(aes_key).encrypt(nonce, plain, header)
-    eph_pub = eph.public_key().public_bytes(serialization.Encoding.X962,
-                                            serialization.PublicFormat.UncompressedPoint)
-    record = eph_pub + nonce + ct_tag
-    assert len(record) == rec_len
-    unsigned = header + tlv(T_COMMISSIONING, record) + others
-    assert len(unsigned) == 27 + payload_len
-    return sign(unsigned, key), zones
+    bundle = _commissioning_bundle(LockIdentity(device_id, lock_pub33), secrets, key, door, zones, others,
+                                   sequence=now, now=now, valid_until=now + int(valid_days * 86400))
+    return bundle, zones
 
 
 def main():
@@ -145,21 +119,7 @@ def main():
             print(bundle.hex().upper())
             return
         exists = AID in run("hf mfdes getaids").upper()
-        auth = f"-n 0 -t aes -k {ZERO}"
-        steps = [] if exists else [
-            step(f"create commissioning application {AID}",
-                 f"hf mfdes createapp --aid {AID} --ks1 0B --dstalgo aes --numkeys 1"),
-            step(f"create file 0 ({FILE_SIZE} bytes, plain, free read)",
-                 f"hf mfdes createfile --aid {AID} {auth} --fid 00 --size {FILE_SIZE:06X} --amode plain "
-                 "--rrights free --wrights key0 --rwrights key0 --chrights key0"),
-        ]
-        steps += [
-            step("write commissioning bundle",
-                 f"hf mfdes write --aid {AID} {auth} -m plain --fid 00 -d {bundle.hex().upper()}"),
-            step("read back (free read)",
-                 f"hf mfdes read --aid {AID} --fid 00 --no-auth -l {len(bundle):06X}",
-                 verify_hex=bundle.hex().upper()),
-        ]
+        steps = commissioning_card_plan(bundle, app_exists=exists)
 
     for i, s in enumerate(steps, 1):
         print(f"[{i}/{len(steps)}] {s['desc']}")

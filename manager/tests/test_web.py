@@ -178,3 +178,18 @@ def test_ui_forms(admin, hospital):
     assert "User card" in r.text and "Card UID" in r.text
     r = admin.get(base + "/access?at=2026-11-24T23:00")
     assert "New Person" in r.text
+
+
+def test_manager_card_bytes_match_golden(admin, hospital):
+    """A user card issued in the GUI carries the recorded bytes (except issued_at = now)."""
+    gold = json.loads((HOSPITAL.parents[1] / "manager" / "tests" / "golden" / "hospital.json").read_text())
+    api = f"/t/hospital/sites/{hospital}"
+    for p in admin.api("GET", api + "/people").json():
+        cred = next((c for c in p["credentials"] if c["status"] == "active"), None)
+        if cred is None:
+            continue
+        job = admin.api("POST", api + f"/cards/user/{p['id']}").json()
+        g = gold["cards"][str(cred["number"])]
+        assert job["payload"]["file0"][:24] == g["file0"][:24], p["name"]          # all but issued_at
+        n = len(job["payload"]["file1"])
+        assert job["payload"]["file1"] == g["file1"][:n] and set(g["file1"][n:]) <= {"0"}, p["name"]

@@ -45,7 +45,7 @@ Dark mode follows your system setting:
 - **Offline.** One Python process with SQLite. It never contacts the internet: no CDN, no cloud, no telemetry.
 - **Several organisations.** One installation can serve several tenants, each strictly isolated. Each member has a role: owner, admin, operator or auditor.
 - **Your keys stay sealed.** Site keys are encrypted at rest and never shown. A copy of the database alone reveals nothing.
-- **Same bytes as the reference scripts.** Cards and bundles are byte-identical to `examples/hospital/*.py`, and tests check this.
+- **One implementation of the wire formats.** The GUI and the example scripts in `examples/hospital/` use the same `protocol/` package. Known-answer tests pin the bytes to values recorded from the original, independent scripts.
 - **Status: v0.1.** Tested with the example sites and in automated tests. The Proxmark write path has not been tried on hardware yet, and it is not for a real door yet.
 
 ## Scripted setup (`ocm` CLI)
@@ -73,6 +73,7 @@ To let the manager write cards itself, attach a Proxmark3 and set `OCM_PM3_PATH=
 ```
 src/ocmanager/
   protocol/        pure wire formats, no web: card, bundle, an10922, commissioning, decision, encoder
+                   (also used by examples/hospital/*.py; card + decision need only the standard library)
   core/            config, db (SQLAlchemy 2), vault, security (auth, CSRF, tokens), tenancy, audit,
                    module registry, web helpers
   modules/         one package per feature:

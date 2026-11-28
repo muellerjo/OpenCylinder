@@ -5,6 +5,8 @@ by the local Proxmark3 driver (ocmanager.modules.encoder). Same commands as
 examples/hospital/write_*.py. Dev cards only: factory-default card master key.
 """
 
+from __future__ import annotations
+
 import re
 import subprocess
 from dataclasses import asdict, dataclass
@@ -27,24 +29,20 @@ class Step:
     def as_dict(self):
         return asdict(self)
 
+    def __getitem__(self, key):            # scripts use step["cmd"], step["expect"], ...
+        return getattr(self, key)
+
 
 def _chkey(aid: str, no: int, new: str) -> str:
     return (f"hf mfdes changekey --aid {aid} -n 0 -t aes -k {ZERO} --newkeyno {no} "
             f"--oldalgo aes --oldkey {ZERO} --newalgo aes --newkey {new} --newver 01")
 
 
-def user_card_plan(aid: str, uid: bytes, file0: bytes, file1_used: bytes,
-                   issuer_master: bytes, read_master: bytes, uid_key: bytes) -> list[Step]:
-    """Format the card, create the site application, write + verify (write_test_card.py)."""
-    m = uid + bytes.fromhex(aid)[::-1]
-    k0 = diversify(issuer_master, m).hex().upper()
-    k1 = diversify(read_master, m).hex().upper()
-    k2 = uid_key.hex().upper()
+def user_app_steps(aid: str, file0: bytes, file1_used: bytes, k0: str, k1: str, k2: str) -> list[Step]:
+    """Keys, files, records and checks inside a freshly created site application.
+    k0/k1 = this card's diversified issuer/read key, k2 = site UID key (hex)."""
     a0, a1, a2 = (f"-n {n} -t aes -k {k}" for n, k in ((0, k0), (1, k1), (2, k2)))
     s = [
-        Step("A1  format card (delete all applications)", "hf mfdes formatpicc"),
-        Step(f"A2  create application {aid} with 3 AES keys",
-             f"hf mfdes createapp --aid {aid} --ks1 0B --dstalgo aes --numkeys 3"),
         Step("A3  set key 1 (site read key, diversified)", _chkey(aid, 1, k1)),
         Step("A3  set key 2 (UID key, site-wide)", _chkey(aid, 2, k2)),
         Step("A3  set key 0 (issuer key, diversified) — last", _chkey(aid, 0, k0)),
@@ -74,15 +72,56 @@ def user_card_plan(aid: str, uid: bytes, file0: bytes, file1_used: bytes,
     return s
 
 
+def format_and_create_steps(aid: str) -> list[Step]:
+    return [
+        Step("A1  format card (delete all applications)", "hf mfdes formatpicc"),
+        Step(f"A2  create application {aid} with 3 AES keys",
+             f"hf mfdes createapp --aid {aid} --ks1 0B --dstalgo aes --numkeys 3"),
+    ]
+
+
+def dam_create_step(aid: str, slot: int, grant: dict) -> Step:
+    """EV2/EV3: create the site application DELEGATED in a DAM slot with the card owner's
+    grant (EncK, DAMMAC) — no format, other sites' applications stay."""
+    quota = int(grant["quota_blocks"])
+    return Step(f"A2  create DELEGATED application {aid} (DAM slot {slot}, quota {quota} "
+                "blocks) with the owner's grant",
+                f"hf mfdes createdelegateapp --aid {aid} --damslot {slot:04X} --damslotver 00 "
+                f"--quota {quota:04X} --ks1 {grant['ks1']} --ks2 {grant['ks2']} -t 2TDEA "
+                f"-k {grant['dam_auth_key']} --enck {grant['enck']} --dammac {grant['dammac']}")
+
+
+def kdf_check_steps(aid: str, read_master_hex: str, kdf_input_hex: str) -> list[Step]:
+    """Bench self-check against the Proxmark's own AN10922. Puts the MASTER read key on the
+    command line — dev keys only, never for a real site (the manager leaves it out)."""
+    return [
+        Step("D1  Proxmark's own AN10922 (master read key + --kdf) authenticates",
+             f"hf mfdes auth --aid {aid} -n 1 -t aes -k {read_master_hex} --kdf AN10922 -i {kdf_input_hex}"),
+        Step("D2  undiversified master read key must be REFUSED",
+             f"hf mfdes auth --aid {aid} -n 1 -t aes -k {read_master_hex}", expect="fail"),
+    ]
+
+
+def card_keys(uid: bytes, aid: str, master0: bytes, master1: bytes) -> tuple[str, str]:
+    """Per-card keys 0 and 1 (hex) — AN10922 with M = UID || AID (wire order)."""
+    m = uid + bytes.fromhex(aid)[::-1]
+    return diversify(master0, m).hex().upper(), diversify(master1, m).hex().upper()
+
+
+def user_card_plan(aid: str, uid: bytes, file0: bytes, file1_used: bytes,
+                   issuer_master: bytes, read_master: bytes, uid_key: bytes) -> list[Step]:
+    """Format the card, create the site application, write + verify."""
+    k0, k1 = card_keys(uid, aid, issuer_master, read_master)
+    return format_and_create_steps(aid) + user_app_steps(aid, file0, file1_used, k0, k1, uid_key.hex().upper())
+
+
 def admin_card_plan(admin_aid: str, uid: bytes, header: bytes, bundle: bytes,
                     admin_issuer_master: bytes, admin_read_master: bytes,
                     app_exists: bool = False) -> list[Step]:
     """Admin application next to any user application (write_admin_card.py)."""
     if len(bundle) > BUNDLE_FILE_SIZE:
         raise ValueError(f"bundle too large: {len(bundle)} > {BUNDLE_FILE_SIZE} bytes")
-    m = uid + bytes.fromhex(admin_aid)[::-1]
-    k0 = diversify(admin_issuer_master, m).hex().upper()
-    k1 = diversify(admin_read_master, m).hex().upper()
+    k0, k1 = card_keys(uid, admin_aid, admin_issuer_master, admin_read_master)
     a0, a1 = f"-n 0 -t aes -k {k0}", f"-n 1 -t aes -k {k1}"
     create = [
         Step(f"A1  delete old admin application {admin_aid} (may not exist)",
@@ -148,9 +187,14 @@ def looks_failed(out: str) -> bool:
     return False
 
 
-def verified(out: str, expected_hex: str) -> bool:
+def data_hex(out: str) -> str:
+    """Hex bytes of a Proxmark file dump (the `| XX XX .. |` data columns), joined."""
     cols = re.findall(r"\|\s*((?:[0-9A-Fa-f]{2}\s+)+)\|", out)
-    dump = "".join(c.replace(" ", "") for c in cols).upper()
+    return "".join(c.replace(" ", "") for c in cols).upper()
+
+
+def verified(out: str, expected_hex: str) -> bool:
+    dump = data_hex(out)
     return expected_hex.upper() in dump or expected_hex.upper() in re.sub(r"\s", "", out).upper()
 
 

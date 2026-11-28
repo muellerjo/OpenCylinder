@@ -21,7 +21,6 @@ Python `cryptography` package.
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +28,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from an10922 import diversify, opencylinder_input  # noqa: E402
 from check_access import access_entries, encode_card  # noqa: E402  (same folder)
+from ocmanager.protocol import encoder as E  # noqa: E402  (shared Proxmark plans)
+from ocmanager.protocol.encoder import Step  # noqa: E402
 
 # ==== PUBLIC DEV TEST MASTER KEYS — bench only, never for a real site. ====
 # Keys 0 and 1 on the card are diversified from these per card (AN10922).
@@ -37,123 +38,38 @@ K0_ISSUER_MASTER = "0F0E0D0C0B0A09080706050403020100"
 K1_READ_MASTER = "00112233445566778899AABBCCDDEEFF"
 K2_UID = "A0A1A2A3A4A5A6A7A8A9AAABACADAEAF"
 
-ANSI = re.compile(r"\x1b\[[0-9;]*m")
-# Lines the Iceman client uses for errors / warnings
-ERROR_MARKERS = ("[!!]", "[-]", "[!] ")
-ERROR_WORDS = re.compile(r"error|fail|can't|cannot|not found|denied|timeout", re.I)
-
-
 def step(desc, cmd, expect="ok", verify_hex=None):
-    return {"desc": desc, "cmd": cmd, "expect": expect, "verify": verify_hex}
+    return Step(desc, cmd, expect, verify_hex)
 
 
 def build_steps(aid, file0, file1_used, k0_card, k1_card, kdf_input, dam_slot=None, dam_grant=None):
-    auth0 = f"-n 0 -t aes -k {k0_card}"
-    auth1 = f"-n 1 -t aes -k {k1_card}"
-    auth2 = f"-n 2 -t aes -k {K2_UID}"
-    rights = "--amode encrypt --rrights key1 --wrights key0 --rwrights key0 --chrights key0"
-
-    def chkey(no, new):
-        return (f"hf mfdes changekey --aid {aid} -n 0 -t aes -k {ZERO} --newkeyno {no} "
-                f"--oldalgo aes --oldkey {ZERO} --newalgo aes --newkey {new} --newver 01")
-
+    """Commands for one card. Steps come from the shared plan builders."""
     if dam_slot is None:
-        create = [
-            step("A1  format card (delete all applications)", "hf mfdes formatpicc"),
-            step(f"A2  create application {aid} with 3 AES keys",
-                 f"hf mfdes createapp --aid {aid} --ks1 0B --dstalgo aes --numkeys 3"),
-        ]
+        create = E.format_and_create_steps(aid)
     else:
         # DAM (EV2/EV3): no format — other sites' applications stay. The card
         # owner's DAM keys must be set (dam_setup.py). The site uses ONLY the
         # owner's grant (EncK, DAMMAC) and the DAM auth key — never the owner's
         # DAM ENC/MAC keys (needs the Proxmark client with --enck/--dammac).
-        g = dam_grant
-        quota = int(g["quota_blocks"])
-        create = [
-            step(f"A2  create DELEGATED application {aid} (DAM slot {dam_slot}, quota {quota} "
-                 "blocks) with the owner's grant",
-                 f"hf mfdes createdelegateapp --aid {aid} --damslot {dam_slot:04X} --damslotver 00 "
-                 f"--quota {quota:04X} --ks1 {g['ks1']} --ks2 {g['ks2']} -t 2TDEA -k {g['dam_auth_key']} "
-                 f"--enck {g['enck']} --dammac {g['dammac']}"),
-        ]
-    s = create + [
-        step("A3  set key 1 (site read key, diversified)", chkey(1, k1_card)),
-        step("A3  set key 2 (UID key, site-wide)", chkey(2, K2_UID)),
-        step("A3  set key 0 (issuer key, diversified) — last", chkey(0, k0_card)),
-        step(f"A4  application list contains {aid}", "hf mfdes getaids", verify_hex=aid),
-        step("B1  create file 0 (header, 16 bytes)",
-             f"hf mfdes createfile --aid {aid} {auth0} --fid 00 --size 000010 {rights}"),
-        step("B1  create file 1 (access list, 128 bytes)",
-             f"hf mfdes createfile --aid {aid} {auth0} --fid 01 --size 000080 {rights}"),
-        step("B2  write header with issuer key",
-             f"hf mfdes write --aid {aid} {auth0} -m encrypt --fid 00 -d {file0.hex().upper()}"),
-    ]
-    if file1_used:
-        s.append(step("B2  write access list with issuer key",
-                      f"hf mfdes write --aid {aid} {auth0} -m encrypt --fid 01 "
-                      f"-d {file1_used.hex().upper()}"))
-    s += [
-        step("C1  read header with READ key (like a lock)",
-             f"hf mfdes read --aid {aid} {auth1} -m encrypt --fid 00",
-             verify_hex=file0.hex().upper()),
-    ]
-    if file1_used:
-        s.append(step("C1  read access list with READ key",
-                      f"hf mfdes read --aid {aid} {auth1} -m encrypt --fid 01 "
-                      f"-l {len(file1_used):06X}",
-                      verify_hex=file1_used.hex().upper()))
-    s += [
-        step("C2  write with READ key must be REFUSED (key separation)",
-             f"hf mfdes write --aid {aid} {auth1} -m encrypt --fid 00 -d {'00' * 16}",
-             expect="fail"),
-        step("C3  read with UID key must be REFUSED (no file rights)",
-             f"hf mfdes read --aid {aid} {auth2} -m encrypt --fid 00",
-             expect="fail"),
-        step("D1  Proxmark's own AN10922 (master read key + --kdf) authenticates",
-             f"hf mfdes auth --aid {aid} -n 1 -t aes -k {K1_READ_MASTER} "
-             f"--kdf AN10922 -i {kdf_input}"),
-        step("D2  undiversified master read key must be REFUSED",
-             f"hf mfdes auth --aid {aid} -n 1 -t aes -k {K1_READ_MASTER}",
-             expect="fail"),
-    ]
-    return s
+        create = [E.dam_create_step(aid, dam_slot, dam_grant)]
+    return (create + E.user_app_steps(aid, file0, file1_used, k0_card, k1_card, K2_UID)
+            + E.kdf_check_steps(aid, K1_READ_MASTER, kdf_input))
 
 
 def run_pm3(pm3, port, cmd):
-    argv = [str(pm3)] + ([port] if port else []) + ["-c", cmd]
-    p = subprocess.run(argv, capture_output=True, text=True, timeout=60)
-    return p.returncode, ANSI.sub("", p.stdout + p.stderr)
+    return 0, E.run_pm3(str(pm3), port, cmd)
 
 
 def read_uid(pm3, port):
     """Real 7-byte UID of the card on the Proxmark (fixed-UID cards only)."""
     _rc, out = run_pm3(pm3, port, "hf 14a info")
-    mt = re.search(r"UID:\s*((?:[0-9A-Fa-f]{2}\s){6}[0-9A-Fa-f]{2})\b", out)
+    mt = E.UID_RE.search(out)
     if not mt:
         sys.exit("could not read a 7-byte card UID (card on the Proxmark? random UID?)")
     return bytes.fromhex(mt.group(1))
 
 
-def data_hex(out):
-    """Hex bytes of a Proxmark file dump (the `| XX XX .. |` data columns), joined."""
-    cols = re.findall(r"\|\s*((?:[0-9A-Fa-f]{2}\s+)+)\|", out)
-    return "".join(c.replace(" ", "") for c in cols).upper()
-
-
-def verified(out, expected_hex):
-    """True if the expected bytes appear in the dump (or, for non-dump output, in the text)."""
-    return expected_hex.upper() in data_hex(out) or \
-        expected_hex.upper() in re.sub(r"\s", "", out).upper()
-
-
-def looks_failed(out):
-    for line in out.splitlines():
-        if line.startswith(ERROR_MARKERS) or (line.startswith("[") and ERROR_WORDS.search(line)):
-            # The client echoes the session log path etc. with [=]; only flag real errors.
-            if "Session log" not in line:
-                return True
-    return False
+data_hex, verified, looks_failed = E.data_hex, E.verified, E.looks_failed
 
 
 def main():

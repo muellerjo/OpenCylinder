@@ -1,0 +1,112 @@
+{
+ "_comment": "Known-answer values recorded from the original, independent example scripts (examples/hospital before they were switched to ocmanager.protocol, 2026-11-28). Public dev test keys and fictional data only.",
+ "uid": "04AABBCCDDEE80",
+ "admin_records": {
+  "full": {
+   "actions": 7,
+   "records": "120800D3070000FFFFFFFF201E00017F6801B00400000000023F2C01940200000000031FA401380400000000211A004345542D31434553542C4D332E352E302C4D31302E352E302F33"
+  },
+  "blacklist_add_2001_7": {
+   "actions": 3,
+   "records": "101000D1070000FFFFFFFF07000000FFFFFFFF"
+  },
+  "blacklist_remove_2003": {
+   "actions": 3,
+   "records": "110400D3070000"
+  },
+  "reassign_door_6": {
+   "actions": 9,
+   "records": "31070006000203000500"
+  },
+  "decommission": {
+   "actions": 17,
+   "records": "400000"
+  }
+ },
+ "profiles_value": "017F6801B00400000000023F2C01940200000000031FA401380400000000",
+ "build_bundle_5_6_7": "010031434F090909090909090905000000060000000700000002000102",
+ "cards": {
+  "1001": {
+   "file0": "01070000E90300000000000080F2036B",
+   "file1": "0201000002020000020300000206000002070000020A0000010D000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "1002": {
+   "file0": "01060000EA0300000000000080F2036B",
+   "file1": "0201000002020000020300000206000002070000020A00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "2001": {
+   "file0": "01030000D10700000000000080F2036B",
+   "file1": "0201000002040000020700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "2002": {
+   "file0": "01030000D20700000000000080F2036B",
+   "file1": "0201000002050000020700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "2003": {
+   "file0": "01030000D30700000000000080F2036B",
+   "file1": "0201000002040000020700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "3001": {
+   "file0": "01040000B90B00000000000080F2036B",
+   "file1": "0201000002030001020700000208000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "4001": {
+   "file0": "01030000A10F00006077AD6B80F2036B",
+   "file1": "0201000202030002020700020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "4002": {
+   "file0": "01030000A20F0000F072E66A80F2036B",
+   "file1": "0201000202030002020700020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "5001": {
+   "file0": "01040000891300000000000080F2036B",
+   "file1": "020100000207000002090000020A000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "6001": {
+   "file0": "01030000711700000000000080F2036B",
+   "file1": "0201000302070000010B00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "7001": {
+   "file0": "01010000591B0000F011186D80F2036B",
+   "file1": "0102000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+  }
+ },
+ "user_card_2001_commands": [
+  "hf mfdes formatpicc",
+  "hf mfdes createapp --aid 4F4331 --ks1 0B --dstalgo aes --numkeys 3",
+  "hf mfdes changekey --aid 4F4331 -n 0 -t aes -k 00000000000000000000000000000000 --newkeyno 1 --oldalgo aes --oldkey 00000000000000000000000000000000 --newalgo aes --newkey BBEA4AF650F075370889D1DD1D0CBABB --newver 01",
+  "hf mfdes changekey --aid 4F4331 -n 0 -t aes -k 00000000000000000000000000000000 --newkeyno 2 --oldalgo aes --oldkey 00000000000000000000000000000000 --newalgo aes --newkey A0A1A2A3A4A5A6A7A8A9AAABACADAEAF --newver 01",
+  "hf mfdes changekey --aid 4F4331 -n 0 -t aes -k 00000000000000000000000000000000 --newkeyno 0 --oldalgo aes --oldkey 00000000000000000000000000000000 --newalgo aes --newkey 8518882BE7E4485D6A4F89673EC26E83 --newver 01",
+  "hf mfdes getaids",
+  "hf mfdes createfile --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 --fid 00 --size 000010 --amode encrypt --rrights key1 --wrights key0 --rwrights key0 --chrights key0",
+  "hf mfdes createfile --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 --fid 01 --size 000080 --amode encrypt --rrights key1 --wrights key0 --rwrights key0 --chrights key0",
+  "hf mfdes write --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 -m encrypt --fid 00 -d 01030000D10700000000000080F2036B",
+  "hf mfdes write --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 -m encrypt --fid 01 -d 020100000204000002070000",
+  "hf mfdes read --aid 4F4331 -n 1 -t aes -k BBEA4AF650F075370889D1DD1D0CBABB -m encrypt --fid 00",
+  "hf mfdes read --aid 4F4331 -n 1 -t aes -k BBEA4AF650F075370889D1DD1D0CBABB -m encrypt --fid 01 -l 00000C",
+  "hf mfdes write --aid 4F4331 -n 1 -t aes -k BBEA4AF650F075370889D1DD1D0CBABB -m encrypt --fid 00 -d 00000000000000000000000000000000",
+  "hf mfdes read --aid 4F4331 -n 2 -t aes -k A0A1A2A3A4A5A6A7A8A9AAABACADAEAF -m encrypt --fid 00",
+  "hf mfdes auth --aid 4F4331 -n 1 -t aes -k 00112233445566778899AABBCCDDEEFF --kdf AN10922 -i 04AABBCCDDEE8031434F",
+  "hf mfdes auth --aid 4F4331 -n 1 -t aes -k 00112233445566778899AABBCCDDEEFF"
+ ],
+ "user_card_4001_commands": [
+  "hf mfdes formatpicc",
+  "hf mfdes createapp --aid 4F4331 --ks1 0B --dstalgo aes --numkeys 3",
+  "hf mfdes changekey --aid 4F4331 -n 0 -t aes -k 00000000000000000000000000000000 --newkeyno 1 --oldalgo aes --oldkey 00000000000000000000000000000000 --newalgo aes --newkey BBEA4AF650F075370889D1DD1D0CBABB --newver 01",
+  "hf mfdes changekey --aid 4F4331 -n 0 -t aes -k 00000000000000000000000000000000 --newkeyno 2 --oldalgo aes --oldkey 00000000000000000000000000000000 --newalgo aes --newkey A0A1A2A3A4A5A6A7A8A9AAABACADAEAF --newver 01",
+  "hf mfdes changekey --aid 4F4331 -n 0 -t aes -k 00000000000000000000000000000000 --newkeyno 0 --oldalgo aes --oldkey 00000000000000000000000000000000 --newalgo aes --newkey 8518882BE7E4485D6A4F89673EC26E83 --newver 01",
+  "hf mfdes getaids",
+  "hf mfdes createfile --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 --fid 00 --size 000010 --amode encrypt --rrights key1 --wrights key0 --rwrights key0 --chrights key0",
+  "hf mfdes createfile --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 --fid 01 --size 000080 --amode encrypt --rrights key1 --wrights key0 --rwrights key0 --chrights key0",
+  "hf mfdes write --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 -m encrypt --fid 00 -d 01030000A10F00006077AD6B80F2036B",
+  "hf mfdes write --aid 4F4331 -n 0 -t aes -k 8518882BE7E4485D6A4F89673EC26E83 -m encrypt --fid 01 -d 020100020203000202070002",
+  "hf mfdes read --aid 4F4331 -n 1 -t aes -k BBEA4AF650F075370889D1DD1D0CBABB -m encrypt --fid 00",
+  "hf mfdes read --aid 4F4331 -n 1 -t aes -k BBEA4AF650F075370889D1DD1D0CBABB -m encrypt --fid 01 -l 00000C",
+  "hf mfdes write --aid 4F4331 -n 1 -t aes -k BBEA4AF650F075370889D1DD1D0CBABB -m encrypt --fid 00 -d 00000000000000000000000000000000",
+  "hf mfdes read --aid 4F4331 -n 2 -t aes -k A0A1A2A3A4A5A6A7A8A9AAABACADAEAF -m encrypt --fid 00",
+  "hf mfdes auth --aid 4F4331 -n 1 -t aes -k 00112233445566778899AABBCCDDEEFF --kdf AN10922 -i 04AABBCCDDEE8031434F",
+  "hf mfdes auth --aid 4F4331 -n 1 -t aes -k 00112233445566778899AABBCCDDEEFF"
+ ],
+ "check_access_0300": "St. Example Hospital (fictional) — Tue 2026-11-24 03:00 CET\n\n                   1  2  3  4  5  6  7  8  9 10 11 12 13\nDr. Lena Koch      ✓  ✓  ✓  ✓  ✓  ✓  ✓  ✓  ·  ·  ·  ✓  ✓\nDr. Tim Berger     ✓  ✓  ✓  ✓  ✓  ✓  ✓  ✓  ·  ·  ·  ✓  ·\nSara Yilmaz        ✓  ·  ✓  ✓  ✓  ·  ·  ·  ·  ·  ·  ✓  ·\nMax Huber          ✓  ·  ✓  ·  ·  ✓  ✓  ·  ·  ·  ·  ✓  ·\nEva Brandt         B  B  B  B  B  B  B  B  B  B  B  B  B\nPeter Lang         ✓  ·  ✓  t  ·  t  ·  ·  ·  ✓  ·  ✓  ·\nOlga Novak         t  ·  t  t  ·  t  ·  ·  ·  ·  ·  t  ·\nBen Fischer        E  E  E  E  E  E  E  E  E  E  E  E  E\nMia Schulz         ✓  ·  ✓  ·  t  ·  t  ·  ✓  ·  ·  ✓  ·\nAli Demir          t  ·  ✓  ·  ·  ·  ·  ·  ·  ·  ✓  ✓  ·\nEMS crew North     ·  ✓  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·\n\n✓ open   · no right   t not at this time   E expired   B blacklisted   ? time unknown\n\n   1  Main entrance\n   2  Emergency room entrance\n   3  Canteen\n   4  Ward 1 - ward door\n   5  Ward 1 - medication room\n   6  Ward 2 - ward door\n   7  Ward 2 - medication room\n   8  ICU entrance\n   9  Pharmacy\n  10  Boiler room\n  11  Server room\n  12  Changing rooms\n  13  Chief physician's office\n",
+ "check_access_1000": "St. Example Hospital (fictional) — Tue 2026-11-24 10:00 CET\n\n                   1  2  3  4  5  6  7  8  9 10 11 12 13\nDr. Lena Koch      ✓  ✓  ✓  ✓  ✓  ✓  ✓  ✓  ·  ·  ·  ✓  ✓\nDr. Tim Berger     ✓  ✓  ✓  ✓  ✓  ✓  ✓  ✓  ·  ·  ·  ✓  ·\nSara Yilmaz        ✓  ·  ✓  ✓  ✓  ·  ·  ·  ·  ·  ·  ✓  ·\nMax Huber          ✓  ·  ✓  ·  ·  ✓  ✓  ·  ·  ·  ·  ✓  ·\nEva Brandt         B  B  B  B  B  B  B  B  B  B  B  B  B\nPeter Lang         ✓  ·  ✓  ✓  ·  ✓  ·  ·  ·  ✓  ·  ✓  ·\nOlga Novak         ✓  ·  ✓  ✓  ·  ✓  ·  ·  ·  ·  ·  ✓  ·\nBen Fischer        E  E  E  E  E  E  E  E  E  E  E  E  E\nMia Schulz         ✓  ·  ✓  ·  ✓  ·  ✓  ·  ✓  ·  ·  ✓  ·\nAli Demir          ✓  ·  ✓  ·  ·  ·  ·  ·  ·  ·  ✓  ✓  ·\nEMS crew North     ·  ✓  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·  ·\n\n✓ open   · no right   t not at this time   E expired   B blacklisted   ? time unknown\n\n   1  Main entrance\n   2  Emergency room entrance\n   3  Canteen\n   4  Ward 1 - ward door\n   5  Ward 1 - medication room\n   6  Ward 2 - ward door\n   7  Ward 2 - medication room\n   8  ICU entrance\n   9  Pharmacy\n  10  Boiler room\n  11  Server room\n  12  Changing rooms\n  13  Chief physician's office\n"
+}

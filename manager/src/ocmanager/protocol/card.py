@@ -1,5 +1,7 @@
 """User card format v1 (spec/card-format.md): file 0 header + file 1 access list."""
 
+from __future__ import annotations
+
 import struct
 from dataclasses import dataclass
 
@@ -7,6 +9,14 @@ FORMAT_VERSION = 1
 TYPE_DOOR, TYPE_ZONE = 0x01, 0x02
 FILE1_SIZE = 128
 MAX_ENTRIES = FILE1_SIZE // 4
+DAY_BITS = {"Mon": 0, "Tue": 1, "Wed": 2, "Thu": 3, "Fri": 4, "Sat": 5, "Sun": 6}
+DAYS = list(DAY_BITS)
+
+
+def normalize_profile(p: dict) -> dict:
+    """site.json profile (either from/to or intervals) -> {id, days, intervals}."""
+    ivs = p.get("intervals") or [{"from": p["from"], "to": p["to"]}]
+    return {"id": p["id"], "days": list(p["days"]), "intervals": [dict(i) for i in ivs]}
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,8 @@ Record 0x30 = ECIES to the lock's device key: ECDH P-256 + HKDF-SHA256 +
 AES-128-GCM with the 27-byte bundle header as AAD.
 """
 
+from __future__ import annotations
+
 import os
 import re
 import struct

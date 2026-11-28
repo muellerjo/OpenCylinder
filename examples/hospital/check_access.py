@@ -11,24 +11,29 @@ bytes for every door.
   python3 check_access.py --door 4                 # explain one door
   python3 check_access.py --card 2001              # card bytes of one user
 
-Standard library only (Python 3.9+).
+Standard library only (Python 3.9+); the format and decision logic come from
+the shared package manager/src/ocmanager/protocol (no extra install).
 """
 
 import argparse
 import json
-import struct
 from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-FORMAT_VERSION = 1
-TYPE_DOOR, TYPE_ZONE = 0x01, 0x02
-FILE1_SIZE = 128                       # default: 32 entries x 4 bytes
-MAX_ENTRIES = FILE1_SIZE // 4
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+import _protocol  # noqa: F401  (shared implementation: manager/src/ocmanager/protocol)
+from ocmanager.protocol import card as C
+from ocmanager.protocol import decision as D
+
+FORMAT_VERSION = C.FORMAT_VERSION
+TYPE_DOOR, TYPE_ZONE = C.TYPE_DOOR, C.TYPE_ZONE
+FILE1_SIZE = C.FILE1_SIZE
+MAX_ENTRIES = C.MAX_ENTRIES
 
 # Result symbols for the matrix
 OPEN, NO_RIGHT, PROFILE, EXPIRED, BLACKLISTED, NO_TIME = "✓", "·", "t", "E", "B", "?"
+SYMBOL = {D.OPEN: OPEN, D.NO_RIGHT: NO_RIGHT, D.PROFILE: PROFILE, D.EXPIRED: EXPIRED,
+          D.BLACKLISTED: BLACKLISTED, D.NO_TIME: NO_TIME}
 
 
 def unix(iso):
@@ -45,32 +50,19 @@ def access_entries(site, user):
     """Role entries + individual extras, de-duplicated, as (type, id, profile)."""
     raw = [e for r in user["roles"] for e in site["roles"][r]["entries"]]
     raw += user.get("extra", [])
-    out = []
-    for e in raw:
-        t = (TYPE_DOOR, e["door"]) if "door" in e else (TYPE_ZONE, e["zone"])
-        entry = (*t, e.get("profile", 0))
-        if entry not in out:
-            out.append(entry)
-    if len(out) > MAX_ENTRIES:
-        raise ValueError(f"{user['name']}: {len(out)} entries > {MAX_ENTRIES}")
-    return out
+    try:
+        entries = C.merge_entries([C.Entry(TYPE_DOOR, e["door"], e.get("profile", 0)) if "door" in e
+                                   else C.Entry(TYPE_ZONE, e["zone"], e.get("profile", 0)) for e in raw])
+    except ValueError as err:
+        raise ValueError(f"{user['name']}: {err}") from err
+    return [(e.kind, e.target, e.profile) for e in entries]
 
 
 def encode_card(site, user):
     """Return (file0, file1) bytes per spec/card-format.md, format v1."""
-    entries = access_entries(site, user)
-    file0 = struct.pack(
-        "<BBHIII",
-        FORMAT_VERSION,
-        len(entries),
-        0,                                        # reserved
-        user["credential_id"],
-        unix(user.get("valid_until")),
-        unix(site["site"]["issued_at"]),
-    )
-    file1 = b"".join(struct.pack("<BHB", *e) for e in entries)
-    file1 += bytes(FILE1_SIZE - len(file1))       # unused entries are zero
-    return file0, file1
+    entries = [C.Entry(*e) for e in access_entries(site, user)]
+    return C.encode_card(user["credential_id"], entries, unix(user.get("valid_until")),
+                         unix(site["site"]["issued_at"]))
 
 
 # ------------------------------------------------------------------- lock
@@ -81,28 +73,12 @@ class Lock:
     def __init__(self, site, door):
         self.door_id = door["id"]
         self.zones = set(door["zones"])
-        self.tz = ZoneInfo(site["site"]["timezone"])
-        self.profiles = {p["id"]: p for p in site["time_profiles"]}
-        self.blacklist = set(site["blacklist"])
+        self._model = D.LockModel(door["id"], set(door["zones"]), site["site"]["timezone"],
+                                  {p["id"]: C.normalize_profile(p) for p in site["time_profiles"]},
+                                  set(site["blacklist"]))
 
     def profile_allows(self, profile_id, now):
-        if profile_id == 0:
-            return True                           # 0 = always
-        p = self.profiles.get(profile_id)
-        if p is None or now is None:
-            return False                          # unknown profile / time: fail closed
-        local = datetime.fromtimestamp(now, self.tz)
-        hhmm = local.strftime("%H:%M")
-        today = DAYS[local.weekday()]
-        yesterday = DAYS[(local.weekday() + 6) % 7]
-        for iv in p.get("intervals", [{"from": p.get("from"), "to": p.get("to")}]):
-            f, t = iv["from"], iv["to"]
-            if f < t and today in p["days"] and f <= hhmm < t:
-                return True
-            if f > t:  # wraps past midnight, belongs to the day it starts on
-                if (today in p["days"] and hhmm >= f) or (yesterday in p["days"] and hhmm < t):
-                    return True
-        return False
+        return self._model.profile_allows(profile_id, now)
 
     def decide(self, file0, file1, now):
         """Decision logic from the spec, on raw card bytes. Returns (symbol, reason).
@@ -110,30 +86,8 @@ class Lock:
         `now` is Unix UTC seconds, or None if the lock's time is unknown.
         (Authentication with the site read key is assumed to have succeeded.)
         """
-        version, count, _res, cred, valid_until, _issued = struct.unpack("<BBHIII", file0)
-        if version != FORMAT_VERSION:
-            return NO_RIGHT, f"unknown format_version {version}"
-        if count > MAX_ENTRIES:
-            return NO_RIGHT, "malformed entry_count"
-        if valid_until != 0 and now is None:
-            return NO_TIME, "time unknown and card has an expiry"
-        if valid_until != 0 and now > valid_until:
-            return EXPIRED, "card expired"
-        if cred in self.blacklist:
-            return BLACKLISTED, "credential blacklisted"
-
-        profile_blocked = False
-        for i in range(count):
-            etype, target, profile = struct.unpack_from("<BHB", file1, 4 * i)
-            if (etype == TYPE_DOOR and target == self.door_id) or \
-               (etype == TYPE_ZONE and target in self.zones):
-                if self.profile_allows(profile, now):
-                    kind = "door" if etype == TYPE_DOOR else "zone"
-                    return OPEN, f"{kind} {target}" + (f", profile {profile}" if profile else "")
-                profile_blocked = True
-        if profile_blocked:
-            return PROFILE, "right exists, but not at this time"
-        return NO_RIGHT, "no matching door/zone entry"
+        result, reason = self._model.decide(file0, file1, now)
+        return SYMBOL[result], reason
 
 
 # -------------------------------------------------------------------- CLI

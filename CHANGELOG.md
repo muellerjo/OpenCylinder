@@ -7,6 +7,13 @@ prefixed with the component: `fw`, `tools`, `hw`, `spec`, `docs`.
 
 ## [Unreleased]
 
+### Changed
+- examples + manager: one implementation of the wire formats. The example
+  scripts now import `manager/src/ocmanager/protocol` (via `_protocol.py`)
+  instead of their own copies; output is unchanged (checked against
+  recorded dry-runs). Manager tests pin the bytes with known-answer values
+  recorded from the original scripts (`manager/tests/golden/`).
+
 ### Added
 - manager: offline, multi-tenant web GUI — `python3 manager/app.py`, first-start
   setup in the browser (optional example hospital), sites/zones/doors/time

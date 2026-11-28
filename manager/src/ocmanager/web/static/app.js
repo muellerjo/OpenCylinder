@@ -6,6 +6,26 @@
     if (meta) e.detail.headers["X-CSRF-Token"] = meta.content;
   });
 
+  // Never fail silently: show a message when an htmx request errors or the
+  // server cannot be reached (htmx does not swap error responses by itself).
+  function showError(msg) {
+    var main = document.querySelector("main") || document.body;
+    var box = document.createElement("div");
+    box.className = "flash error";
+    box.setAttribute("role", "alert");
+    box.textContent = msg;
+    main.insertBefore(box, main.firstChild);
+    window.scrollTo(0, 0);
+  }
+  document.body.addEventListener("htmx:responseError", function (e) {
+    var x = e.detail.xhr;
+    showError("Request failed (HTTP " + x.status + "). " + (x.status === 403
+      ? "Not allowed or the page is outdated — reload the page." : "Reload the page and try again."));
+  });
+  document.body.addEventListener("htmx:sendError", function () {
+    showError("The manager is not reachable — is it still running (python3 manager/app.py)?");
+  });
+
   // <form data-confirm="..."> asks before submitting (works with and without htmx)
   document.addEventListener("submit", function (e) {
     var msg = e.target.getAttribute && e.target.getAttribute("data-confirm");

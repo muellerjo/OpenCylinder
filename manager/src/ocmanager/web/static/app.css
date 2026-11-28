@@ -125,3 +125,5 @@ ol.steps li { margin-bottom: .6rem; }
 .mt0 { margin-top: 0; }
 .w-num { width: 6rem; }
 .w-time { width: 6.5rem; }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator, .htmx-request.htmx-indicator { display: inline; }

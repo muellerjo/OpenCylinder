@@ -24,9 +24,13 @@ That's all you need.
 
 1. **Describe the building.** Add doors and zones (a zone groups doors, e.g. "Ward 1"), plus time profiles such as "Day shift 06–20".
 2. **Add people.** Give each person roles (templates like "Nurse, ward 1") and individual extras. The **access matrix** shows at once who opens which door at any time, using the lock's own decision logic.
-3. **Issue cards.** The manager prepares the card and shows the Proxmark3 commands for that card's UID. With a Proxmark3 attached (`OCM_PM3_PATH=~/proxmark3/pm3`), it writes the card itself.
+3. **Issue cards.** With a Proxmark3 attached, the manager writes the card itself. It finds the client in `~/proxmark3` automatically, or set `OCM_PM3_PATH`. Without a Proxmark3, it shows the commands for that card's UID to copy.
 4. **Commission locks.** Register a lock by its QR text and prepare a commissioning card for its door. The card is encrypted to that one lock. Tap it, then click "confirm".
 5. **Keep locks up to date.** A lost card goes on the blacklist. Profile or time-zone changes travel with a signed **maintenance card** that you tap on the locks.
+6. **Check any card.** Put it on the Proxmark3 and open **Card on the reader**. The manager decodes everything it holds keys for:
+   - **User card:** whose card it is, its rights, whether it is out of date or blacklisted, and which doors it opens right now.
+   - **Admin card:** the bundle contents, the signature, whether it is stale or expired, and which lock it targets.
+   - **Commissioning and identify cards:** which lock they belong to.
 
 ## Tour
 
@@ -34,6 +38,7 @@ That's all you need.
 |---|---|
 | ![Sites](docs/screenshots/02-sites.png) **Sites.** One per DESFire application, each with its own keys. Create one, or import a `site.json`. | ![Doors](docs/screenshots/08-doors.png) **Doors and zones.** Includes which lock sits where. |
 | ![Person](docs/screenshots/05-person.png) **A person.** Their cards, what the card will carry, roles and extra rights. | ![Card job](docs/screenshots/06-card-job.png) **Card job.** Proxmark3 commands for this card's UID (per-card keys only). |
+| ![Card on the reader](docs/screenshots/11-reader.png) **Card on the reader.** A real card from the bench test: Sara's card, blacklisted in the manager, opens nothing. | ![Access matrix](docs/screenshots/03-access-matrix.png) **Access matrix.** Who opens which door at any time. |
 | ![Lock](docs/screenshots/07-lock.png) **A lock.** Identity, state, and cards for commissioning, reassignment and decommissioning. | ![Cards](docs/screenshots/09-cards.png) **Cards and bundles.** Every prepared card, with signed sequence numbers. |
 
 Dark mode follows your system setting:
@@ -46,7 +51,14 @@ Dark mode follows your system setting:
 - **Several organisations.** One installation can serve several tenants, each strictly isolated. Each member has a role: owner, admin, operator or auditor.
 - **Your keys stay sealed.** Site keys are encrypted at rest and never shown. A copy of the database alone reveals nothing.
 - **One implementation of the wire formats.** The GUI and the example scripts in `examples/hospital/` use the same `protocol/` package. Known-answer tests pin the bytes to values recorded from the original, independent scripts.
-- **Status: v0.1.** Tested with the example sites and in automated tests. The Proxmark write path has not been tried on hardware yet, and it is not for a real door yet.
+- **Status: v0.1, tested on the bench (2026-11-28).** Every card in the full chain was written by the manager onto a real DESFire EV3 and tapped on the bench lock:
+  1. decommission → FACTORY;
+  2. commissioning → OWNED, door 4;
+  3. user card → OPEN;
+  4. maintenance card → blacklist applied;
+  5. the same user card → DENY blacklisted.
+
+  Not for a real door yet.
 
 ## Scripted setup (`ocm` CLI)
 

@@ -21,7 +21,7 @@ from importlib.metadata import entry_points
 
 from fastapi import APIRouter
 
-BUILTIN = ["auth", "platform", "sites", "people", "locks", "cards", "access", "audit"]
+BUILTIN = ["auth", "platform", "sites", "people", "locks", "cards", "access", "reader", "audit"]
 
 
 @dataclass

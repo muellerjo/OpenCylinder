@@ -201,3 +201,42 @@ def verified(out: str, expected_hex: str) -> bool:
 def step_ok(step: Step, out: str) -> bool:
     failed = looks_failed(out) or (step.verify is not None and not verified(out, step.verify))
     return step.expect == "any" or (failed if step.expect == "fail" else not failed)
+
+
+CMD_MARK = re.compile(r"pm3 --> (.*)$")
+AID_LINE = re.compile(r"\b([0-9A-Fa-f]{6})\b")
+
+
+def run_pm3_batch(pm3: str, port: str | None, cmds: list[str], timeout: int = 90) -> list[str]:
+    """Several commands in ONE client session ("a; b; c") — one USB connect instead of
+    one per command. Returns the output of each command (split at the client's
+    `pm3 --> <cmd>` echo lines)."""
+    out = run_pm3(pm3, port, "; ".join(cmds), timeout=timeout)
+    parts: list[list[str]] = []
+    for line in out.splitlines():
+        if CMD_MARK.search(line):
+            parts.append([])
+        elif parts:
+            parts[-1].append(line)
+    res = ["\n".join(p) for p in parts]
+    return res + [""] * (len(cmds) - len(res))
+
+
+def parse_aids(getaids_out: str) -> list[str]:
+    """AIDs from `hf mfdes getaids` (lines after '--- AID list')."""
+    aids, on = [], False
+    for line in getaids_out.splitlines():
+        if "AID list" in line:
+            on = True
+            continue
+        if on and line.startswith("[+]"):
+            aids += [a.upper() for a in AID_LINE.findall(line[3:])]
+    return aids
+
+
+def read_cmd(aid: str, fid: int, key_no: int | None = None, key_hex: str | None = None,
+             length: int | None = None) -> str:
+    """hf mfdes read: encrypted with a key, or plain with --no-auth (free read files)."""
+    auth = f"-n {key_no} -t aes -k {key_hex} -m encrypt" if key_hex else "--no-auth"
+    ln = f" -l {length:06X}" if length else ""
+    return f"hf mfdes read --aid {aid} {auth} --fid {fid:02X}{ln}"

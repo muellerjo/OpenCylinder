@@ -1,0 +1,15 @@
+{% extends "base.html" %}{% import "macros.html" as m with context %}
+{% block content %}
+<h1>Card on the reader</h1>
+<p class="muted">Put a card on the Proxmark3 and read it: the manager decodes every application it holds keys for — who the card belongs to, what it opens right now, whether it is up to date, and what an admin, commissioning or identify card carries.</p>
+{% if ready %}
+<form method="post" action="/t/{{ tenant.slug }}/reader" hx-post="/t/{{ tenant.slug }}/reader" hx-target="#result" hx-indicator="#reading" class="row">
+  {{ m.csrf_field() }}
+  <button>Read card</button>
+  <span id="reading" class="muted htmx-indicator">reading … (a few seconds)</span>
+</form>
+{% else %}
+<div class="flash warn">No reader on this machine. Install the Proxmark3 client in <code>~/proxmark3</code> (found automatically) or start with <code>OCM_PM3_PATH=/path/to/pm3 python3 manager/app.py</code>. On a server the reader sits at the encoder PC — that path comes with the encoder agent.</div>
+{% endif %}
+<div id="result">{% if result or error %}{% include "reader/result.html" %}{% endif %}</div>
+{% endblock %}

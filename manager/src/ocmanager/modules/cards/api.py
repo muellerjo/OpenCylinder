@@ -52,3 +52,14 @@ def written(site_id: int, job_id: int, data: WrittenIn, ctx: TenantContext = Dep
     job = ctx.get(CardJob, job_id, site)
     J.mark_written(ctx, site, job, data.uid, data.log)
     return job
+
+
+@router.post("/{job_id}/write-local", summary="Write the job with the reader attached to THIS machine "
+             "(user cards: set confirm_format, the card is formatted)")
+def write_local(site_id: int, job_id: int, confirm_format: bool = False, ctx: TenantContext = Depends(ISSUE)):
+    site = ctx.site(site_id)
+    job = ctx.get(CardJob, job_id, site)
+    ok, results = J.run_local(ctx, site, job, confirm_format)
+    return {"ok": ok, "status": job.status, "card_uid": job.card_uid,
+            "steps": [{"desc": r["desc"], "ok": r["ok"], **({} if r["ok"] else {"output": r["out"]})}
+                      for r in results]}

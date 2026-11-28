@@ -8,6 +8,18 @@ prefixed with the component: `fw`, `fwz`, `tools`, `hw`, `manager`, `spec`, `doc
 ## [Unreleased]
 
 ### Added
+- manager: card inspector "Card on the reader" (`/t/<tenant>/reader`, API
+  `POST /api/v1/t/<tenant>/reader/inspect`). It reads the card on the Proxmark3
+  in two batched client sessions and decodes user, admin, commissioning and
+  identify applications. It flags cards that are out of date, blacklisted,
+  foreign-keyed, stale, expired or have a bad signature, and lists the doors
+  a card opens now.
+- manager: `POST …/cards/{job}/write-local` (API for writing on this
+  machine's reader); the Proxmark3 client in `~/proxmark3` or on PATH is
+  found automatically in local mode.
+- manager: bench-verified end to end on a DESFire EV3 and the XIAO lock.
+  Decommission, commissioning, user card (OPEN), maintenance card (blacklist
+  applied) and blacklisted user card (DENY), all written by the manager.
 - ci: GitHub Actions per component with path filters — `firmware` (host
   tests + PlatformIO builds), `manager` (pytest, Python 3.11/3.13),
   `examples` (Python 3.10 standard library + dry-runs), `hardware` (OpenSCAD

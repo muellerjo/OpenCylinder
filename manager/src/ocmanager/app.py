@@ -30,6 +30,13 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
+    if settings.mode == "local" and not settings.pm3_path:
+        # local PC: use a Proxmark3 client in the usual place without any setting
+        import shutil
+        from pathlib import Path
+        found = shutil.which("pm3") or next((str(p) for p in [Path.home() / "proxmark3" / "pm3"] if p.is_file()),
+                                            None)
+        settings.pm3_path = found
 
     app = FastAPI(title="OpenCylinder Manager", version=__version__,
                   docs_url=None, redoc_url=None,            # Swagger/ReDoc load from CDNs -> off

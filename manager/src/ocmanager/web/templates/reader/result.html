@@ -1,0 +1,73 @@
+{% macro t(v) %}{{ v.strftime("%Y-%m-%d %H:%M UTC") if v else "—" }}{% endmacro %}
+{% macro problems(a) %}{% for p in a.problems %}<div class="flash {{ 'error' if 'BLACKLISTED' in p or 'NOT' in p or 'expired' in p or 'other keys' in p else 'warn' }}">{{ p }}</div>{% endfor %}{% endmacro %}
+{% macro bundle_records(b, names, people) %}
+  <table>{% for r in b.records %}<tr><td><b>{{ r.name }}</b></td><td>
+    {% if r.entries is defined %}{% for e in r.entries %}<span class="badge">{{ e.credential_id }}{% if people and people.get(e.credential_id) %} · {{ people[e.credential_id] }}{% endif %}</span> {% else %}<span class="muted">empty list</span>{% endfor %}
+    {% elif r.profiles is defined %}{% for p in r.profiles %}<div class="small">{{ p.id }}{% if names %} · {{ names.profile.get(p.id, "?") }}{% endif %}: {{ p.days|join(" ") }} {{ p.intervals|join(", ") }}</div>{% endfor %}
+    {% elif r.tz is defined %}<code>{{ r.tz }}</code>
+    {% elif r.door is defined %}door {{ r.door }}{% if names %} · {{ names.door.get(r.door, "?") }}{% endif %}, zones {{ r.zones }}
+    {% else %}<span class="muted">{{ r.length }} bytes</span>{% endif %}</td></tr>{% endfor %}</table>
+{% endmacro %}
+
+{% if error %}<div class="flash error">{{ error }}</div>
+{% elif not result.present %}<div class="flash warn">{{ result.hint }}</div>
+{% else %}
+<div class="panel">
+  <div class="spread"><h2 class="mt0">Card <span class="mono">{{ result.uid }}</span></h2><span class="muted small">{{ result.type }}</span></div>
+  <p class="small">Applications: {% for a in result.aids %}<span class="badge mono">{{ a }}</span> {% else %}<span class="muted">none (empty card)</span>{% endfor %}</p>
+</div>
+{% for a in result.apps %}
+<div class="panel">
+  {% if a.kind == "user" %}
+    <div class="spread"><h2 class="mt0">User card · {{ a.site.name }} <span class="muted mono small">{{ a.aid }}</span></h2>
+      {% if a.problems %}<span class="badge bad">check</span>{% else %}<span class="badge ok">up to date</span>{% endif %}</div>
+    {{ problems(a) }}
+    {% if a.header is defined %}
+    <p>{% if a.person %}<a href="/t/{{ tenant.slug }}/s/{{ a.site.id }}/people/{{ a.person.id }}"><b>{{ a.person.name }}</b></a>{% else %}<b>unknown holder</b>{% endif %}
+       · credential <span class="mono">{{ a.header.credential_id }}</span>
+       · valid until {{ t(a.valid_until) if a.header.valid_until else "no expiry" }}{% if a.expired %} <span class="badge bad">expired</span>{% endif %}
+       · written {{ t(a.issued_at) }}</p>
+    <h3>Rights on the card</h3>
+    <table>{% for e in a.entries %}<tr><td>{{ e.kind }} {{ e.target }}</td><td>{{ a.names[e.kind].get(e.target, "? (unknown on this site)") }}</td><td>{{ (a.names.profile.get(e.profile, "?") ~ " (profile " ~ e.profile ~ ")") if e.profile else "always" }}</td></tr>{% else %}<tr><td class="muted">no entries</td></tr>{% endfor %}</table>
+    <h3>Opens right now</h3>
+    <p>{% for d in a.opens %}<span class="badge ok">{{ d.number }} {{ d.name }}</span> {% else %}<span class="muted">no door{% if a.refusal %} — {{ a.refusal }}{% endif %}</span>{% endfor %}</p>
+    {% if a.outdated and a.person and ctx.can("cards.issue") %}
+      <form method="post" action="/t/{{ tenant.slug }}/s/{{ a.site.id }}/cards/user/{{ a.person.id }}" hx-boost="false"><input type="hidden" name="csrf_token" value="{{ csrf }}"><button>Issue this card again</button></form>
+    {% endif %}
+    {% endif %}
+  {% elif a.kind == "admin" %}
+    <div class="spread"><h2 class="mt0">Admin card · {{ a.site.name }} <span class="muted mono small">{{ a.aid }}</span></h2>
+      {% if a.problems %}<span class="badge bad">check</span>{% else %}<span class="badge ok">valid</span>{% endif %}</div>
+    {{ problems(a) }}
+    {% if a.bundle %}
+    <p>{% if a.bundle.target_device %}For <b>one lock</b>: {% if a.lock %}<a href="/t/{{ tenant.slug }}/s/{{ a.lock.site_id }}/locks/{{ a.lock.id }}" class="mono">{{ a.bundle.target_device }}</a> (door {{ a.lock.door_number }}){% else %}<span class="mono">{{ a.bundle.target_device }}</span> <span class="muted">(not in the registry)</span>{% endif %}{% else %}For <b>every lock</b> of the site{% endif %}
+      · sequence <span class="mono">{{ a.bundle.sequence }}</span> · issued {{ t(a.issued_at) }} · valid until {{ t(a.valid_until) }} · actions {{ a.admin_header.actions|join(", ") }}</p>
+    {{ bundle_records(a.bundle, a.names, a.people) }}
+    {% endif %}
+  {% elif a.kind == "commissioning" %}
+    <div class="spread"><h2 class="mt0">Commissioning card <span class="muted mono small">{{ a.aid }}</span></h2>
+      {% if a.problems %}<span class="badge bad">check</span>{% else %}<span class="badge ok">valid</span>{% endif %}</div>
+    {{ problems(a) }}
+    {% if a.bundle %}
+    <p>Site {{ a.site.name if a.site else a.bundle.site_aid }} · for lock {% if a.lock %}<a class="mono" href="/t/{{ tenant.slug }}/s/{{ a.lock.site_id }}/locks/{{ a.lock.id }}">{{ a.bundle.target_device }}</a> ({{ a.lock.state }}){% else %}<span class="mono">{{ a.bundle.target_device }}</span>{% endif %}
+       · sequence <span class="mono">{{ a.bundle.sequence }}</span> · valid until {{ t(a.valid_until) }}</p>
+    {{ bundle_records(a.bundle, a.names if a.names is defined else None, a.people if a.people is defined else None) }}
+    <p class="muted small">Door, zones and site keys are inside the encrypted record — only the target lock can read them.</p>
+    {% endif %}
+  {% elif a.kind == "identify" %}
+    <h2 class="mt0">Identify card <span class="muted mono small">{{ a.aid }}</span></h2>
+    {{ problems(a) }}
+    {% if a.identity %}{% set i = a.identity %}
+    <p>Written by lock <span class="mono">{{ i.device_id }}</span> · state <b>{{ i.state }}</b> · firmware {{ i.firmware }}
+      {% if i.state == "OWNED" %}· site {{ a.site.name if a.site else i.site_aid }} · door {{ i.door }}{% endif %}</p>
+    {% if a.lock %}<p>Known lock: <a href="/t/{{ tenant.slug }}/s/{{ a.lock.site_id }}/locks/{{ a.lock.id }}">{{ a.lock.label or a.lock.device_id }}</a> ({{ a.lock.state }})</p>
+    {% else %}<p class="muted">Not in your lock registry. Register it on a site's Locks page with this QR text:</p>{% endif %}
+    <pre id="qr-{{ loop.index }}">{{ i.qr }}</pre><button type="button" class="secondary" data-copy="#qr-{{ loop.index }}">Copy QR text</button>
+    {% endif %}
+  {% else %}
+    <h2 class="mt0">Other application <span class="mono">{{ a.aid }}</span></h2>
+    <p class="muted">Not one of your sites — another site, another system, or a DAM slot of someone else. Nothing to decode here.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}

@@ -186,7 +186,13 @@ involved, verified on the bench. Details live in the linked documents.
 - [x] Manager web GUI: sites, zones, doors, profiles, roles, people and cards, blacklist, lock registry, all card types, access matrix, audit log
 - [x] Multi-tenant with roles (owner, admin, operator, auditor), API tokens, sealed site keys, one-command start with first-run setup
 - [x] One implementation of the wire formats for scripts and GUI, pinned by known-answer tests
-- [ ] Card writing from the GUI tried with the Proxmark3 on a real card
+- [x] Card writing from the GUI verified on the bench (2026-11-28). The manager wrote every card onto a DESFire EV3, and the lock answered each one:
+  1. decommission → FACTORY;
+  2. commissioning → OWNED, door 4;
+  3. user card → OPEN;
+  4. maintenance card → blacklist applied;
+  5. the same user card → DENY blacklisted.
+- [x] Card inspector ("Card on the reader"): decodes user, admin, commissioning and identify cards, including whether a card is out of date, blacklisted, stale or wrongly signed
 - [ ] Encoder agent for server installations (encoder PC fetches card plans via the API)
 - [ ] DAM (several sites on one card) and identify-card read-out in the GUI
 - [ ] Database migrations (Alembic), backup/restore, OIDC login
